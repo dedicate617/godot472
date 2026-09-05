@@ -185,7 +185,7 @@ def find_vcvars64(custom_path: Optional[str] = None) -> Optional[str]:
                 "-requires", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
                 "-property", "installationPath"
             ]
-            res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            res = subprocess.run(cmd, capture_output=True, text=True, errors="replace", check=True)
             vs_path = res.stdout.strip()
             if vs_path:
                 vcvars = Path(vs_path) / "VC" / "Auxiliary" / "Build" / "vcvars64.bat"
@@ -215,7 +215,7 @@ def find_vcvars64(custom_path: Optional[str] = None) -> Optional[str]:
 def extract_vcvars_env(vcvars_bat: str) -> Dict[str, str]:
     """Execute vcvars64.bat in a shell and capture exported environment variables."""
     cmd = f'call "{vcvars_bat}" >nul 2>&1 && set'
-    proc = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
+    proc = subprocess.run(cmd, shell=True, capture_output=True, text=True, errors="replace", check=True)
     env: Dict[str, str] = {}
     for line in proc.stdout.splitlines():
         if "=" in line:
