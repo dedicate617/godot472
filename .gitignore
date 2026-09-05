@@ -1,0 +1,16 @@
+# Build artifacts
+*.obj
+*.lib
+*.exp
+*.pdb
+*.exe
+*.so
+*.a
+.sconsign*
+__pycache__/
+*.pyc
+
+# Local scratch and logs
+scratch/
+logs/
+*.log
