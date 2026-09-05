@@ -1,0 +1,296 @@
+# SCsub
+Import('env')
+import os
+
+module_env = env.Clone()
+module_env.add_source_files(env.modules_sources, "*.cpp")
+if env.get('tools', False):
+    env.add_source_files(env.modules_sources, "test/varmanager_test.cpp")
+# module_env.Append(CCFLAGS=['-O2'])
+# module_env.Append(CXXFLAGS=['-std=c++14'])
+module_env.Append(CPPDEFINES=["HAS_OPCUA"])
+
+print("=======varmanager env info start===========")
+print(module_env["platform"])
+print(module_env["target"])
+print(module_env["arch"])
+print("module_mono_enabled=" + str(module_env.get("module_mono_enabled", False)))
+_OPEN62541VER = ARGUMENTS.get('OPEN62541VER', "")
+print("OPEN62541VER=" + _OPEN62541VER)
+_OPEN62541CPPWRAPPERVER = ""
+_MBEDTLSVER = ARGUMENTS.get('MBEDTLSVER', "v2.17.0")
+print("MBEDTLSVER=" + _MBEDTLSVER)
+_COMPILERVER = ARGUMENTS.get('COMPILERVER', "")
+# maybe -gcc11.3.1
+print("COMPILERVER=" + _COMPILERVER)
+print("=======varmanager env info end===========")
+
+if _OPEN62541VER == ".v1.3.5":
+	_OPEN62541CPPWRAPPERVER = "62541v1.3.5"
+elif _OPEN62541VER == ".v1.3.9":
+	_OPEN62541CPPWRAPPERVER = "62541v1.3.9"
+else:
+	_OPEN62541CPPWRAPPERVER = ""
+print(_OPEN62541CPPWRAPPERVER)
+
+# --- Dynamic Dependency Resolution ---
+def get_platform_arch_keys(env):
+    plat = env.get("platform", "")
+    arch = env.get("arch", "")
+    norm_plat = "linux" if plat in ["linux", "linuxbsd"] else plat
+    if "arm64" in arch or "aarch64" in arch:
+        norm_arch = "arm64"
+    elif "arm" in arch or "arm32" in arch:
+        norm_arch = "arm32"
+    elif "64" in arch:
+        norm_arch = "x64"
+    elif "86" in arch or "32" in arch:
+        norm_arch = "x86"
+    else:
+        norm_arch = arch
+
+    keys = [f"{norm_plat}_{norm_arch}"]
+    raw_key = f"{plat}_{arch}"
+    if raw_key not in keys:
+        keys.append(raw_key)
+    if norm_plat not in keys:
+        keys.append(norm_plat)
+    return keys
+
+def resolve_deps_root(env, default_fallback):
+    try:
+        module_dir = os.path.dirname(os.path.abspath(__file__))
+    except NameError:
+        module_dir = Dir('.').abspath
+
+    keys = get_platform_arch_keys(env)
+
+    # 1. Probe relative deps/ directory (../../deps/{platform}_{arch})
+    for key in keys:
+        rel_deps = os.path.abspath(os.path.join(module_dir, "..", "..", "deps", key))
+        if os.path.isdir(rel_deps):
+            entries = [e for e in os.listdir(rel_deps) if e != ".gitkeep"]
+            if entries:
+                print(f"[varmanager] Found dependencies in relative deps: {rel_deps}")
+                return rel_deps
+
+    # 2. Probe MINDSCADA_DEPS_ROOT
+    env_root = os.environ.get("MINDSCADA_DEPS_ROOT") or ARGUMENTS.get("MINDSCADA_DEPS_ROOT", "")
+    if env_root and os.path.isdir(env_root):
+        for key in keys:
+            keyed_dir = os.path.join(env_root, key)
+            if os.path.isdir(keyed_dir):
+                print(f"[varmanager] Found dependencies in MINDSCADA_DEPS_ROOT/{key}: {keyed_dir}")
+                return keyed_dir
+        print(f"[varmanager] Using MINDSCADA_DEPS_ROOT: {env_root}")
+        return env_root
+
+    # 3. Fallback compatibility with local default
+    print(f"[varmanager] Using fallback dependencies path: {default_fallback}")
+    return default_fallback
+
+
+if module_env["platform"] in ["windows"]:
+    deps_root = resolve_deps_root(module_env, "C:/opensource")
+
+    # for c++ try catch when compiled with msvc
+    module_env.Append(CXXFLAGS=['/EHsc'])
+
+    _MBEDTLSLIBPATH = ""
+    _MBEDTLSLIBPOSTFIX = ""
+    if _MBEDTLSVER == "v2.17.0":
+        _MBEDTLSLIBPATH = os.path.join(deps_root, "QUaServer/depends/mbedtls.git/build/library/")
+    else:
+        _MBEDTLSLIBPATH = os.path.join(deps_root, "mbedtls/build/" + _MBEDTLSVER + "/library/")
+        _MBEDTLSLIBPOSTFIX = "_mbedtls." + _MBEDTLSVER
+    print("_MBEDTLSLIBPATH=" + _MBEDTLSLIBPATH)
+
+    # Standard layout include check
+    if os.path.isdir(os.path.join(deps_root, "include")):
+        module_env.Append(CPPPATH=[
+            os.path.join(deps_root, "include"),
+            os.path.join(deps_root, "include", "open62541"),
+            os.path.join(deps_root, "include", "Open62541CppWrapper"),
+            os.path.join(deps_root, "include", "spdlog"),
+        ])
+
+    # Package / fallback layout includes
+    if _OPEN62541VER == "" or _OPEN62541VER == ".v1.3.5":
+        module_env.Append(CPPPATH=[
+            os.path.join(deps_root, "QUaServer/depends/open62541.git/deps"),
+            os.path.join(deps_root, "QUaServer/depends/open62541.git/plugins/include"),
+            os.path.join(deps_root, "QUaServer/depends/open62541.git/arch"),
+            os.path.join(deps_root, "QUaServer/depends/open62541.git/include"),
+            os.path.join(deps_root, "open62541.git/build" + _OPEN62541VER + _MBEDTLSLIBPOSTFIX + "/src_generated"),
+            os.path.join(deps_root, "Open62541CppWrapper/Open62541CppWrapper"),
+            os.path.join(deps_root, "spdlog/include")
+        ])
+    else:  # _OPEN62541VER >= ".v1.3.9"
+        module_env.Append(CPPPATH=[
+            os.path.join(deps_root, "open62541.git" + _OPEN62541VER + "/deps"),
+            os.path.join(deps_root, "open62541.git" + _OPEN62541VER + "/plugins/include"),
+            os.path.join(deps_root, "open62541.git" + _OPEN62541VER + "/arch"),
+            os.path.join(deps_root, "open62541.git" + _OPEN62541VER + "/include"),
+            os.path.join(deps_root, "open62541.git/build" + _OPEN62541VER + _MBEDTLSLIBPOSTFIX + "/src_generated"),
+            os.path.join(deps_root, "Open62541CppWrapper/Open62541CppWrapper"),
+            os.path.join(deps_root, "spdlog/include")
+        ])
+
+    is_debug = (module_env.get("dev_build", False) == True or module_env.get("target") == "template_debug")
+
+    # Standard layout lib check
+    if os.path.isdir(os.path.join(deps_root, "lib")):
+        sub_dir = "Debug" if is_debug else "Release"
+        if os.path.isdir(os.path.join(deps_root, "lib", sub_dir)):
+            env.Append(LIBPATH=[os.path.join(deps_root, "lib", sub_dir)])
+        env.Append(LIBPATH=[os.path.join(deps_root, "lib")])
+
+    if not is_debug and (module_env["target"] == "template_release" or module_env["target"] == "editor"):
+        if "64" in module_env["arch"]:
+            env.Append(LIBPATH=[
+                os.path.join(deps_root, "pthread291/lib/x64"),
+                os.path.join(deps_root, "open62541.git/build" + _OPEN62541VER + _MBEDTLSLIBPOSTFIX + "/bin/Release"),
+                os.path.join(deps_root, "Open62541CppWrapper/build/Open62541CppWrapper/Release/" + _OPEN62541CPPWRAPPERVER + _MBEDTLSLIBPOSTFIX),
+                os.path.join(_MBEDTLSLIBPATH, "Release"),
+                os.path.join(deps_root, "spdlog/build/x64/Release")
+            ])
+        else:
+            env.Append(LIBPATH=[
+                os.path.join(deps_root, "pthread291/lib/x86"),
+                os.path.join(deps_root, "open62541.git/build" + _OPEN62541VER + "/Release/x86"),
+                os.path.join(deps_root, "Open62541CppWrapper/build/Open62541CppWrapper/Release/x86/" + _OPEN62541CPPWRAPPERVER),
+                os.path.join(deps_root, "QUaServer/depends/mbedtls.git/build/library/Release/x86"),
+                os.path.join(deps_root, "spdlog/build/Release")
+            ])
+
+        env.Append(LIBS=[
+            "Open62541CppWrapper",
+            "pthread",
+            "open62541",
+            "mbedtls",
+            "mbedx509",
+            "mbedcrypto",
+            "spdlog"
+        ])
+    elif is_debug:
+        if "64" in module_env["arch"]:
+            module_env.Append(CXXFLAGS=['/MTd'])
+            env.Append(LIBPATH=[
+                os.path.join(deps_root, "pthread291/lib/x64"),
+                os.path.join(deps_root, "open62541.git/build" + _OPEN62541VER + _MBEDTLSLIBPOSTFIX + "/bin/Debug"),
+                os.path.join(deps_root, "Open62541CppWrapper/build/Open62541CppWrapper/Debug/" + _OPEN62541CPPWRAPPERVER + _MBEDTLSLIBPOSTFIX),
+                os.path.join(_MBEDTLSLIBPATH, "Debug"),
+                os.path.join(deps_root, "spdlog/build/x64/Debug")
+            ])
+        else:
+            env.Append(LIBPATH=[
+                os.path.join(deps_root, "pthread291/lib/x86"),
+                os.path.join(deps_root, "open62541.git/build" + _OPEN62541VER + "/bin/Debug/x86"),
+                os.path.join(deps_root, "Open62541CppWrapper/build/Open62541CppWrapper/Debug/x86/" + _OPEN62541CPPWRAPPERVER),
+                os.path.join(deps_root, "QUaServer/depends/mbedtls.git/build/library/Debug/x86"),
+                os.path.join(deps_root, "spdlog/build/Debug")
+            ])
+
+        env.Append(LIBS=[
+            "Open62541CppWrapper",
+            "pthread",
+            "open62541",
+            "mbedtls",
+            "mbedx509",
+            "mbedcrypto",
+            "spdlogd"
+        ])
+
+    print("==================")
+    print(env.get("LIBPATH", []))
+    print(module_env.get("CPPPATH", []))
+    print("==================")
+
+elif module_env["platform"] in ["linuxbsd"]:
+    deps_root = resolve_deps_root(module_env, "/home/pi/work")
+
+    # Standard layout include check
+    if os.path.isdir(os.path.join(deps_root, "include")):
+        module_env.Append(CPPPATH=[
+            os.path.join(deps_root, "include"),
+            os.path.join(deps_root, "include", "open62541"),
+            os.path.join(deps_root, "include", "Open62541CppWrapper"),
+            os.path.join(deps_root, "include", "spdlog"),
+        ])
+
+    # Package / fallback layout includes
+    module_env.Append(CPPPATH=[
+        os.path.join(deps_root, "open62541.git" + _OPEN62541VER + "/deps"),
+        os.path.join(deps_root, "open62541.git" + _OPEN62541VER + "/plugins/include"),
+        os.path.join(deps_root, "open62541.git" + _OPEN62541VER + "/arch"),
+        os.path.join(deps_root, "open62541.git" + _OPEN62541VER + "/include"),
+        os.path.join(deps_root, "open62541.git" + _OPEN62541VER + "/build/Debug/src_generated"),
+        os.path.join(deps_root, "Open62541CppWrapper" + _OPEN62541VER + "/Open62541CppWrapper"),
+        os.path.join(deps_root, "spdlog/include")
+    ])
+
+    # Standard layout lib check
+    if os.path.isdir(os.path.join(deps_root, "lib")):
+        env.Append(LIBPATH=[os.path.join(deps_root, "lib")])
+
+    if module_env["target"] == "template_release" or module_env["target"] == "editor":
+        _MBEDTLSLIBPATH = ""
+        if _MBEDTLSVER == "v2.17.0":
+            _MBEDTLSLIBPATH = os.path.join(deps_root, "mbedtls.git/build/Release/library/")
+        else:
+            _MBEDTLSLIBPATH = os.path.join(deps_root, "mbedtls/build" + _COMPILERVER + "/" + _MBEDTLSVER + "/Release/library/")
+
+        print("_MBEDTLSLIBPATH=" + _MBEDTLSLIBPATH)
+
+        if "64" in module_env["arch"]:
+            env.Append(LIBPATH=[
+                os.path.join(deps_root, "spdlog/build/Release")
+            ])
+        else:
+            env.Append(LIBPATH=[
+                os.path.join(deps_root, "open62541.git" + _OPEN62541VER + "/build" + _COMPILERVER + "/Release/bin"),
+                os.path.join(deps_root, "Open62541CppWrapper" + _OPEN62541VER + "/build" + _COMPILERVER + "/Release/Open62541CppWrapper"),
+                _MBEDTLSLIBPATH,
+                os.path.join(deps_root, "spdlog/build" + _COMPILERVER + "/Release/noexception")
+            ])
+
+        env.Append(LIBS=[
+            "Open62541CppWrapper",
+            "pthread",
+            "open62541",
+            "mbedtls",
+            "mbedx509",
+            "mbedcrypto",
+            "spdlog"
+        ])
+
+    elif module_env["target"] == "template_debug":
+        _MBEDTLSLIBPATH = ""
+        if _MBEDTLSVER == "v2.17.0":
+            _MBEDTLSLIBPATH = os.path.join(deps_root, "mbedtls.git/build/Debug/library/")
+        else:
+            _MBEDTLSLIBPATH = os.path.join(deps_root, "mbedtls/build" + _COMPILERVER + "/" + _MBEDTLSVER + "/Debug/library/")
+
+        print("_MBEDTLSLIBPATH=" + _MBEDTLSLIBPATH)
+
+        if "64" in module_env["arch"]:
+            env.Append(LIBPATH=[
+                os.path.join(deps_root, "spdlog/build/Debug")
+            ])
+        else:
+            env.Append(LIBPATH=[
+                os.path.join(deps_root, "open62541.git" + _OPEN62541VER + "/build" + _COMPILERVER + "/Debug/bin"),
+                os.path.join(deps_root, "Open62541CppWrapper" + _OPEN62541VER + "/build" + _COMPILERVER + "/Debug/Open62541CppWrapper"),
+                _MBEDTLSLIBPATH,
+                os.path.join(deps_root, "spdlog/build" + _COMPILERVER + "/Debug/noexception")
+            ])
+
+        env.Append(LIBS=[
+            "Open62541CppWrapperd",
+            "pthread",
+            "open62541",
+            "mbedtls",
+            "mbedx509",
+            "mbedcrypto",
+            "spdlogd"
+        ])

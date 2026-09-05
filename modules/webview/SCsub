@@ -1,0 +1,62 @@
+#!/usr/bin/env python
+import os
+
+Import("env")
+Import("env_modules")
+
+env_native_webview = env_modules.Clone()
+env_native_webview.disable_warnings()
+
+env_native_webview.add_source_files(env.modules_sources, "register_types.cpp")
+env_native_webview.add_source_files(env.modules_sources, "webview_common.cpp")
+
+if env["platform"] == "osx" or env["platform"] == "iphone" or env["platform"] == "tvos":
+    env.Append(LINKFLAGS=["-framework", "WebKit"])
+    env_native_webview.add_source_files(env.modules_sources, "webview_wk.mm")
+
+elif env["platform"] == "windows":
+    #env_native_webview.Append(CXXFLAGS=['-std=c++17'])
+    env_native_webview.Append(CPPPATH=["redist"])
+    env_native_webview.add_source_files(env.modules_sources, "webview_edge.cpp")
+
+    try:
+        module_dir = os.path.dirname(os.path.abspath(__file__))
+    except NameError:
+        module_dir = Dir('.').abspath
+
+    arch = env.get("arch", "")
+    arch_sub = "x64"
+    if "arm64" in arch or "aarch64" in arch:
+        arch_sub = "arm64"
+    elif "86" in arch or "32" in arch:
+        arch_sub = "x86"
+
+    # 1. Bundled lib/native/<arch>
+    bundled_libpath = os.path.join(module_dir, "lib", "native", arch_sub)
+    if os.path.isdir(bundled_libpath):
+        env_native_webview.Append(LIBPATH=[bundled_libpath])
+    else:
+        # 2. Relative deps/<platform>_<arch>/lib
+        deps_libpath = os.path.abspath(os.path.join(module_dir, "..", "..", "deps", f"windows_{arch_sub}", "lib"))
+        if os.path.isdir(deps_libpath):
+            env_native_webview.Append(LIBPATH=[deps_libpath])
+        else:
+            # 3. Fallback compatibility
+            env_native_webview.Append(LIBPATH=["Z:/D/work/OpenSource/godot.4.2.1/modules/webview_module/lib/native/x64"])
+
+    env_native_webview.Append(LIBS=[
+        "version",
+        "WebView2Guid",
+        "WebView2LoaderStatic"
+    ])
+
+elif env["platform"] == "linuxbsd":
+    env.ParseConfig("pkg-config gtk+-3.0 webkit2gtk-4.0 --libs")
+    env_native_webview.Append(CFLAGS=["-Wall", "-Wunused", "-DG_DISABLE_DEPRECATED", "-DGDK_DISABLE_DEPRECATED", "-DGDK_PIXBUF_DISABLE_DEPRECATED", "-DGTK_DISABLE_DEPRECATED"])
+    env_native_webview.ParseConfig("pkg-config gtk+-3.0 webkit2gtk-4.0 --cflags")
+    env_native_webview.add_source_files(env.modules_sources, "webview_gtk.cpp")
+
+else:
+    env_native_webview.add_source_files(env.modules_sources, "webview_dummy.cpp")
+
+

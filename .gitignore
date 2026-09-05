@@ -1,16 +1,27 @@
 # Build artifacts
 *.obj
+*.o
 *.lib
 *.exp
 *.pdb
+*.ilk
 *.exe
 *.so
 *.a
 .sconsign*
 __pycache__/
 *.pyc
+*.jvn~
+.vs/
 
 # Local scratch and logs
 scratch/
 logs/
 *.log
+
+# Allow precompiled vendor libraries in modules and deps
+!modules/**/lib/**/*.lib
+!deps/**/*.lib
+!deps/**/*.a
+!deps/**/*.so
+

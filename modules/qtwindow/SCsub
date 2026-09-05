@@ -1,0 +1,18 @@
+#!/usr/bin/env python
+Import("env")
+Import("env_modules")
+
+env_qtwindow = env_modules.Clone()
+env_qtwindow.disable_warnings()
+
+env_qtwindow.add_source_files(env.modules_sources, "register_types.cpp")
+env_qtwindow.add_source_files(env.modules_sources, "qtwindow.cpp")
+env_qtwindow.add_source_files(env.modules_sources, "qtwindow_keymapper.cpp")
+
+if env["platform"] == "windows":
+    env_qtwindow.add_source_files(env.modules_sources, "qtwindow_shm_win.cpp")
+elif env["platform"] == "linuxbsd":
+    env_qtwindow.add_source_files(env.modules_sources, "qtwindow_shm_linux.cpp")
+    env.Append(LIBS=["rt"])  # for shm_open / sem_open
+else:
+    env_qtwindow.add_source_files(env.modules_sources, "qtwindow_dummy.cpp")

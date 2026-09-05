@@ -1,0 +1,170 @@
+# SCsub
+Import('env')
+import os
+
+module_env = env.Clone()
+module_env.add_source_files(env.modules_sources, "*.cpp")
+# module_env.Append(CCFLAGS=['-O2'])
+# module_env.Append(CXXFLAGS=['-std=c++14'])
+# module_env.Append(CPPDEFINES=["HAS_OPCUA"])
+
+print("=======mmkv env info start===========")
+print(module_env["platform"])
+print(module_env["target"])
+print(module_env["arch"])
+_MMKVVER = ARGUMENTS.get('MMKVVER', "") # "" is default version v1.2.14
+print("MMKVVER=" + _MMKVVER)
+_COMPILERVER = ARGUMENTS.get('COMPILERVER', "")
+# maybe -gcc11.3.1
+print("COMPILERVER=" + _COMPILERVER)
+print("=======mmkv env info end===========")
+
+# --- Dynamic Dependency Resolution ---
+def get_platform_arch_keys(env):
+    plat = env.get("platform", "")
+    arch = env.get("arch", "")
+    norm_plat = "linux" if plat in ["linux", "linuxbsd"] else plat
+    if "arm64" in arch or "aarch64" in arch:
+        norm_arch = "arm64"
+    elif "arm" in arch or "arm32" in arch:
+        norm_arch = "arm32"
+    elif "64" in arch:
+        norm_arch = "x64"
+    elif "86" in arch or "32" in arch:
+        norm_arch = "x86"
+    else:
+        norm_arch = arch
+
+    keys = [f"{norm_plat}_{norm_arch}"]
+    raw_key = f"{plat}_{arch}"
+    if raw_key not in keys:
+        keys.append(raw_key)
+    if norm_plat not in keys:
+        keys.append(norm_plat)
+    return keys
+
+def resolve_deps_root(env, default_fallback):
+    try:
+        module_dir = os.path.dirname(os.path.abspath(__file__))
+    except NameError:
+        module_dir = Dir('.').abspath
+
+    keys = get_platform_arch_keys(env)
+
+    # 1. Probe relative deps/ directory (../../deps/{platform}_{arch})
+    for key in keys:
+        rel_deps = os.path.abspath(os.path.join(module_dir, "..", "..", "deps", key))
+        if os.path.isdir(rel_deps):
+            entries = [e for e in os.listdir(rel_deps) if e != ".gitkeep"]
+            if entries:
+                print(f"[kvmanager] Found dependencies in relative deps: {rel_deps}")
+                return rel_deps
+
+    # 2. Probe MINDSCADA_DEPS_ROOT
+    env_root = os.environ.get("MINDSCADA_DEPS_ROOT") or ARGUMENTS.get("MINDSCADA_DEPS_ROOT", "")
+    if env_root and os.path.isdir(env_root):
+        for key in keys:
+            keyed_dir = os.path.join(env_root, key)
+            if os.path.isdir(keyed_dir):
+                print(f"[kvmanager] Found dependencies in MINDSCADA_DEPS_ROOT/{key}: {keyed_dir}")
+                return keyed_dir
+        print(f"[kvmanager] Using MINDSCADA_DEPS_ROOT: {env_root}")
+        return env_root
+
+    # 3. Fallback compatibility with local default
+    print(f"[kvmanager] Using fallback dependencies path: {default_fallback}")
+    return default_fallback
+
+
+if module_env["platform"] in ["windows"]:
+    deps_root = resolve_deps_root(module_env, "C:/opensource")
+
+    # Standard layout include check
+    if os.path.isdir(os.path.join(deps_root, "include")):
+        module_env.Append(CPPPATH=[
+            os.path.join(deps_root, "include"),
+            os.path.join(deps_root, "include", "mmkv"),
+        ])
+
+    # Package / fallback layout includes
+    if "64" in module_env["arch"]:
+        module_env.Append(CPPPATH=[
+            os.path.join(deps_root, "MMKV" + _MMKVVER + "/Win32/x64/Release/include")
+        ])
+    else:
+        module_env.Append(CPPPATH=[
+            os.path.join(deps_root, "MMKV" + _MMKVVER + "/Win32/Release/include")
+        ])
+
+    print("dev_build=" + str(module_env.get("dev_build", False)))
+    is_debug = (module_env.get("dev_build", False) == True or module_env.get("target") == "template_debug")
+
+    # Standard layout lib check
+    if os.path.isdir(os.path.join(deps_root, "lib")):
+        sub_dir = "Debug" if is_debug else "Release"
+        if os.path.isdir(os.path.join(deps_root, "lib", sub_dir)):
+            env.Append(LIBPATH=[os.path.join(deps_root, "lib", sub_dir)])
+        env.Append(LIBPATH=[os.path.join(deps_root, "lib")])
+
+    if not is_debug and (module_env["target"] == "template_release" or module_env["target"] == "editor"):
+        if "64" in module_env["arch"]:
+            env.Append(LIBPATH=[
+                os.path.join(deps_root, "MMKV" + _MMKVVER + "/Win32/x64/Release")
+            ])
+        else:
+            env.Append(LIBPATH=[
+                os.path.join(deps_root, "MMKV" + _MMKVVER + "/Win32/Release")
+            ])
+        env.Append(LIBS=["mmkv"])
+
+    elif is_debug:
+        if "64" in module_env["arch"]:
+            env.Append(LIBPATH=[
+                os.path.join(deps_root, "MMKV" + _MMKVVER + "/Win32/x64/Debug4GD")
+            ])
+        else:
+            env.Append(LIBPATH=[
+                os.path.join(deps_root, "MMKV" + _MMKVVER + "/Win32/Debug")
+            ])
+        env.Append(LIBS=["mmkv"])
+
+elif module_env["platform"] in ["linuxbsd"]:
+    deps_root = resolve_deps_root(module_env, "/media/pi/A31C-5DF8")
+
+    # Standard layout include check
+    if os.path.isdir(os.path.join(deps_root, "include")):
+        module_env.Append(CPPPATH=[
+            os.path.join(deps_root, "include"),
+            os.path.join(deps_root, "include", "mmkv"),
+        ])
+
+    module_env.Append(CPPPATH=[
+        os.path.join(deps_root, "MMKV" + _MMKVVER + "/Core")
+    ])
+    print(module_env["CPPPATH"])
+
+    # Standard layout lib check
+    if os.path.isdir(os.path.join(deps_root, "lib")):
+        env.Append(LIBPATH=[os.path.join(deps_root, "lib")])
+
+    if module_env["target"] == "template_release" or module_env["target"] == "editor":
+        if "64" in module_env["arch"]:
+            env.Append(LIBPATH=[
+                os.path.join(deps_root, "spdlog/build/Release")
+            ])
+        else:
+            env.Append(LIBPATH=[
+                os.path.join(deps_root, "MMKV" + _MMKVVER + "/POSIX/build" + _COMPILERVER + "/release/src/Core")
+            ])
+        env.Append(LIBS=["core"])
+
+    elif module_env["target"] == "template_debug":
+        if "64" in module_env["arch"]:
+            env.Append(LIBPATH=[
+                os.path.join(deps_root, "spdlog/build/Debug")
+            ])
+        else:
+            env.Append(LIBPATH=[
+                os.path.join(deps_root, "MMKV" + _MMKVVER + "/POSIX/build" + _COMPILERVER + "/debug/src/Core")
+            ])
+        env.Append(LIBS=["core"])

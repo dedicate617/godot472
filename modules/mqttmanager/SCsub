@@ -1,0 +1,229 @@
+# SCsub
+Import('env')
+import os
+
+module_env = env.Clone()
+module_env.add_source_files(env.modules_sources, "*.cpp")
+# module_env.Append(CCFLAGS=['-O2'])
+# module_env.Append(CXXFLAGS=['-std=c++14'])
+# module_env.Append(CPPDEFINES=["HAS_OPCUA"])
+
+print("=======mqtt env info start===========")
+print(module_env["platform"])
+print(module_env["target"])
+print(module_env["arch"])
+_MQTTVER = ARGUMENTS.get('MQTTVER', "") # "" is default version v1.4.1
+print("MQTTVER=" + _MQTTVER)
+_COMPILERVER = ARGUMENTS.get('COMPILERVER', "")
+# maybe -gcc11.3.1
+print("COMPILERVER=" + _COMPILERVER)
+print("=======mqtt env info end===========")
+
+# --- Dynamic Dependency Resolution ---
+def get_platform_arch_keys(env):
+    plat = env.get("platform", "")
+    arch = env.get("arch", "")
+    norm_plat = "linux" if plat in ["linux", "linuxbsd"] else plat
+    if "arm64" in arch or "aarch64" in arch:
+        norm_arch = "arm64"
+    elif "arm" in arch or "arm32" in arch:
+        norm_arch = "arm32"
+    elif "64" in arch:
+        norm_arch = "x64"
+    elif "86" in arch or "32" in arch:
+        norm_arch = "x86"
+    else:
+        norm_arch = arch
+
+    keys = [f"{norm_plat}_{norm_arch}"]
+    raw_key = f"{plat}_{arch}"
+    if raw_key not in keys:
+        keys.append(raw_key)
+    if norm_plat not in keys:
+        keys.append(norm_plat)
+    return keys
+
+def resolve_deps_root(env, default_fallback):
+    try:
+        module_dir = os.path.dirname(os.path.abspath(__file__))
+    except NameError:
+        module_dir = Dir('.').abspath
+
+    keys = get_platform_arch_keys(env)
+
+    # 1. Probe relative deps/ directory (../../deps/{platform}_{arch})
+    for key in keys:
+        rel_deps = os.path.abspath(os.path.join(module_dir, "..", "..", "deps", key))
+        if os.path.isdir(rel_deps):
+            entries = [e for e in os.listdir(rel_deps) if e != ".gitkeep"]
+            if entries:
+                print(f"[mqttmanager] Found dependencies in relative deps: {rel_deps}")
+                return rel_deps
+
+    # 2. Probe MINDSCADA_DEPS_ROOT
+    env_root = os.environ.get("MINDSCADA_DEPS_ROOT") or ARGUMENTS.get("MINDSCADA_DEPS_ROOT", "")
+    if env_root and os.path.isdir(env_root):
+        for key in keys:
+            keyed_dir = os.path.join(env_root, key)
+            if os.path.isdir(keyed_dir):
+                print(f"[mqttmanager] Found dependencies in MINDSCADA_DEPS_ROOT/{key}: {keyed_dir}")
+                return keyed_dir
+        print(f"[mqttmanager] Using MINDSCADA_DEPS_ROOT: {env_root}")
+        return env_root
+
+    # 3. Fallback compatibility with local default
+    print(f"[mqttmanager] Using fallback dependencies path: {default_fallback}")
+    return default_fallback
+
+
+if module_env["platform"] in ["windows"]:
+    deps_root = resolve_deps_root(module_env, "C:/lib")
+    spdlog_root = resolve_deps_root(module_env, "C:/opensource")
+
+    # for c++ try catch when compiled with msvc
+    module_env.Append(CXXFLAGS=['/EHsc'])
+
+    # Standard layout include check
+    if os.path.isdir(os.path.join(deps_root, "include")):
+        module_env.Append(CPPPATH=[
+            os.path.join(deps_root, "include"),
+            os.path.join(deps_root, "include", "mqtt"),
+            os.path.join(deps_root, "include", "spdlog"),
+        ])
+
+    paho_inc = os.path.join(deps_root, "PahoMqttCpp/include") if os.path.isdir(os.path.join(deps_root, "PahoMqttCpp/include")) else "C:/lib/PahoMqttCpp/include"
+    openssl_inc = os.path.join(deps_root, "openssl-1.0.2l-vs2017/include64") if os.path.isdir(os.path.join(deps_root, "openssl-1.0.2l-vs2017/include64")) else "C:/lib/openssl-1.0.2l-vs2017/include64"
+    spdlog_inc = os.path.join(spdlog_root, "spdlog/include") if os.path.isdir(os.path.join(spdlog_root, "spdlog/include")) else "C:/opensource/spdlog/include"
+
+    module_env.Append(CPPPATH=[
+        paho_inc,
+        openssl_inc,
+        spdlog_inc
+    ])
+
+    print("dev_build=" + str(module_env.get("dev_build", False)))
+    is_debug = (module_env.get("dev_build", False) == True or module_env.get("target") == "template_debug")
+
+    # Standard layout lib check
+    if os.path.isdir(os.path.join(deps_root, "lib")):
+        sub_dir = "Debug" if is_debug else "Release"
+        if os.path.isdir(os.path.join(deps_root, "lib", sub_dir)):
+            env.Append(LIBPATH=[os.path.join(deps_root, "lib", sub_dir)])
+        env.Append(LIBPATH=[os.path.join(deps_root, "lib")])
+
+    if not is_debug and (module_env["target"] == "template_release" or module_env["target"] == "editor"):
+        if "64" in module_env["arch"]:
+            paho_lib = os.path.join(deps_root, "PahoMqttCpp/lib/" + _MQTTVER + "/x64/MT/Release") if os.path.isdir(os.path.join(deps_root, "PahoMqttCpp")) else "C:/lib/PahoMqttCpp/lib/" + _MQTTVER + "/x64/MT/Release"
+            openssl_lib = os.path.join(deps_root, "openssl-1.0.2l-vs2017/lib64") if os.path.isdir(os.path.join(deps_root, "openssl-1.0.2l-vs2017")) else "C:/lib/openssl-1.0.2l-vs2017/lib64"
+            spdlog_lib = os.path.join(spdlog_root, "spdlog/build/x64/Release") if os.path.isdir(os.path.join(spdlog_root, "spdlog")) else "C:/opensource/spdlog/build/x64/Release"
+            env.Append(LIBPATH=[
+                paho_lib,
+                openssl_lib,
+                spdlog_lib
+            ])
+        else:
+            paho_lib = os.path.join(deps_root, "PahoMqttCpp/lib/" + _MQTTVER + "/x32/Release") if os.path.isdir(os.path.join(deps_root, "PahoMqttCpp")) else "C:/lib/PahoMqttCpp/lib/" + _MQTTVER + "/x32/Release"
+            openssl_lib = os.path.join(deps_root, "openssl-1.0.2l-vs2017/lib") if os.path.isdir(os.path.join(deps_root, "openssl-1.0.2l-vs2017")) else "C:/lib/openssl-1.0.2l-vs2017/lib"
+            spdlog_lib = os.path.join(spdlog_root, "spdlog/build/Release") if os.path.isdir(os.path.join(spdlog_root, "spdlog")) else "C:/opensource/spdlog/build/Release"
+            env.Append(LIBPATH=[
+                paho_lib,
+                openssl_lib,
+                spdlog_lib
+            ])
+        env.Append(LIBS=[
+            "paho-mqttpp3-static",
+            "paho-mqtt3as-static",
+            "ssleay32MT",
+            "libeay32MT",
+            "spdlog"
+        ])
+    elif is_debug:
+        if "64" in module_env["arch"]:
+            paho_lib = os.path.join(deps_root, "PahoMqttCpp/lib/" + _MQTTVER + "/x64/MT/Debug4GD") if os.path.isdir(os.path.join(deps_root, "PahoMqttCpp")) else "C:/lib/PahoMqttCpp/lib/" + _MQTTVER + "/x64/MT/Debug4GD"
+            openssl_lib = os.path.join(deps_root, "openssl-1.0.2l-vs2017/lib64") if os.path.isdir(os.path.join(deps_root, "openssl-1.0.2l-vs2017")) else "C:/lib/openssl-1.0.2l-vs2017/lib64"
+            spdlog_lib = os.path.join(spdlog_root, "spdlog/build/x64/Debug") if os.path.isdir(os.path.join(spdlog_root, "spdlog")) else "C:/opensource/spdlog/build/x64/Debug"
+            env.Append(LIBPATH=[
+                paho_lib,
+                openssl_lib,
+                spdlog_lib
+            ])
+        else:
+            paho_lib = os.path.join(deps_root, "PahoMqttCpp/lib/" + _MQTTVER + "/x32/Debug") if os.path.isdir(os.path.join(deps_root, "PahoMqttCpp")) else "C:/lib/PahoMqttCpp/lib/" + _MQTTVER + "/x32/Debug"
+            openssl_lib = os.path.join(deps_root, "openssl-1.0.2l-vs2017/lib") if os.path.isdir(os.path.join(deps_root, "openssl-1.0.2l-vs2017")) else "C:/lib/openssl-1.0.2l-vs2017/lib"
+            spdlog_lib = os.path.join(spdlog_root, "spdlog/build/Debug") if os.path.isdir(os.path.join(spdlog_root, "spdlog")) else "C:/opensource/spdlog/build/Debug"
+            env.Append(LIBPATH=[
+                paho_lib,
+                openssl_lib,
+                spdlog_lib
+            ])
+        env.Append(LIBS=[
+            "paho-mqttpp3-static",
+            "paho-mqtt3as-static",
+            "ssleay32MTd",
+            "libeay32MTd",
+            "spdlogd"
+        ])
+
+elif module_env["platform"] in ["linuxbsd"]:
+    deps_root = resolve_deps_root(module_env, "/mnt/sdx/dev/lib")
+    spdlog_root = resolve_deps_root(module_env, "/home/pi/work")
+
+    module_env.Append(CXXFLAGS=['-fexceptions'])
+
+    # Standard layout include check
+    if os.path.isdir(os.path.join(deps_root, "include")):
+        module_env.Append(CPPPATH=[
+            os.path.join(deps_root, "include"),
+            os.path.join(deps_root, "include", "mqtt"),
+            os.path.join(deps_root, "include", "spdlog"),
+        ])
+
+    paho_inc = os.path.join(deps_root, "PahoMqttCpp/include") if os.path.isdir(os.path.join(deps_root, "PahoMqttCpp/include")) else "/mnt/sdx/dev/lib/PahoMqttCpp/include"
+    spdlog_inc = os.path.join(spdlog_root, "spdlog/include") if os.path.isdir(os.path.join(spdlog_root, "spdlog/include")) else "/home/pi/work/spdlog/include"
+
+    module_env.Append(CPPPATH=[
+        paho_inc,
+        spdlog_inc
+    ])
+    print(module_env["CPPPATH"])
+
+    # Standard layout lib check
+    if os.path.isdir(os.path.join(deps_root, "lib")):
+        env.Append(LIBPATH=[os.path.join(deps_root, "lib")])
+
+    if module_env["target"] == "template_release" or module_env["target"] == "editor":
+        if "64" in module_env["arch"]:
+            env.Append(LIBPATH=[
+                os.path.join(spdlog_root, "spdlog/build/Release")
+            ])
+        else:
+            env.Append(LIBPATH=[
+                "/usr/local/lib/",
+                os.path.join(spdlog_root, "spdlog/build" + _COMPILERVER + "/Release/noexception")
+            ])
+
+        env.Append(LIBS=[
+            "paho-mqtt3as",
+            "paho-mqttpp3",
+            "spdlog",
+            "crypto",
+            "ssl"
+        ])
+
+    elif module_env["target"] == "template_debug":
+        if "64" in module_env["arch"]:
+            env.Append(LIBPATH=[
+            ])
+        else:
+            env.Append(LIBPATH=[
+                "/usr/local/lib/",
+                os.path.join(spdlog_root, "spdlog/build" + _COMPILERVER + "/Debug/noexception")
+            ])
+
+        env.Append(LIBS=[
+            "paho-mqtt3as",
+            "paho-mqttpp3",
+            "spdlogd",
+            "crypto",
+            "ssl"
+        ])
