@@ -1,0 +1,6 @@
+# Enforce LF endings for patch files
+*.patch text eol=lf
+
+# Binary visual assets
+*.png binary
+*.ico binary

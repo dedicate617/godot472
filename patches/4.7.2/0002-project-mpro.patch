@@ -1,0 +1,103 @@
+diff --git a/core/config/project_settings.cpp b/core/config/project_settings.cpp
+index a12b896..28bdcd8 100644
+--- a/core/config/project_settings.cpp
++++ b/core/config/project_settings.cpp
+@@ -836,7 +836,7 @@ Error ProjectSettings::_load_settings_text(const String &p_path) {
+ 			// If we're loading a project.godot from source code, we can operate some
+ 			// ProjectSettings conversions if need be.
+ 			_convert_to_last_version(config_version);
+-			last_save_time = FileAccess::get_modified_time(get_resource_path().path_join("project.godot"));
++			last_save_time = FileAccess::get_modified_time(p_path);
+ 			return OK;
+ 		}
+ 		ERR_FAIL_COND_V_MSG(err != OK, err, vformat("Error parsing '%s' at line %d: %s File might be corrupted.", p_path, lines, error_text));
+@@ -869,7 +869,19 @@ Error ProjectSettings::_load_settings_text_or_binary(const String &p_text_path,
+ 	}
+ 
+ 	// Fallback to text-based project.godot file if binary was not found.
+-	err = _load_settings_text(p_text_path);
++	String text_path = p_text_path;
++	if (text_path.ends_with(".godot")) {
++		String mpro_path = text_path.trim_suffix(".godot") + ".mpro";
++		if (FileAccess::exists(mpro_path)) {
++			text_path = mpro_path;
++		}
++	} else if (!FileAccess::exists(text_path) && text_path.ends_with(".mpro")) {
++		String godot_path = text_path.trim_suffix(".mpro") + ".godot";
++		if (FileAccess::exists(godot_path)) {
++			text_path = godot_path;
++		}
++	}
++	err = _load_settings_text(text_path);
+ 	if (err == OK) {
+ 		return OK;
+ 	} else if (err != ERR_FILE_NOT_FOUND) {
+@@ -915,9 +927,13 @@ void ProjectSettings::clear(const String &p_name) {
+ }
+ 
+ Error ProjectSettings::save() {
+-	Error error = save_custom(get_resource_path().path_join("project.godot"));
++	String project_path = get_resource_path().path_join("project.mpro");
++	if (!FileAccess::exists(project_path) && FileAccess::exists(get_resource_path().path_join("project.godot"))) {
++		project_path = get_resource_path().path_join("project.godot");
++	}
++	Error error = save_custom(project_path);
+ 	if (error == OK) {
+-		last_save_time = FileAccess::get_modified_time(get_resource_path().path_join("project.godot"));
++		last_save_time = FileAccess::get_modified_time(project_path);
+ 	}
+ 	return error;
+ }
+@@ -995,7 +1011,7 @@ Error ProjectSettings::_save_settings_text(const String &p_file, const RBMap<Str
+ 	Error err;
+ 	Ref<FileAccess> file = FileAccess::open(p_file, FileAccess::WRITE, &err);
+ 
+-	ERR_FAIL_COND_V_MSG(err != OK, err, vformat("Couldn't save project.godot - %s.", p_file));
++	ERR_FAIL_COND_V_MSG(err != OK, err, vformat("Couldn't save project config - %s.", p_file));
+ 
+ 	file->store_line("; Engine configuration file.");
+ 	file->store_line("; It's best edited using the editor UI and not directly,");
+@@ -1163,7 +1179,7 @@ Error ProjectSettings::save_custom(const String &p_path, const CustomMap &p_cust
+ 		save_features += f;
+ 	}
+ 
+-	if (p_path.ends_with(".godot") || p_path.ends_with("override.cfg")) {
++	if (p_path.ends_with(".godot") || p_path.ends_with(".mpro") || p_path.ends_with("override.cfg")) {
+ 		return _save_settings_text(p_path, save_props, p_custom, save_features);
+ 	} else if (p_path.ends_with(".binary")) {
+ 		return _save_settings_binary(p_path, save_props, p_custom, save_features);
+diff --git a/core/variant/variant_parser.cpp b/core/variant/variant_parser.cpp
+index 00d2c2c..d133636 100644
+--- a/core/variant/variant_parser.cpp
++++ b/core/variant/variant_parser.cpp
+@@ -521,7 +521,7 @@ Error VariantParser::_parse_enginecfg(Stream *p_stream, Vector<String> &strings,
+ 	Token token;
+ 	get_token(p_stream, token, line, r_err_str);
+ 	if (token.type != TK_PARENTHESIS_OPEN) {
+-		r_err_str = "Expected '(' in old-style project.godot construct";
++		r_err_str = "Expected '(' in old-style project.mpro construct";
+ 		return ERR_PARSE_ERROR;
+ 	}
+ 
+@@ -531,7 +531,7 @@ Error VariantParser::_parse_enginecfg(Stream *p_stream, Vector<String> &strings,
+ 		char32_t c = p_stream->get_char();
+ 
+ 		if (p_stream->is_eof()) {
+-			r_err_str = "Unexpected EOF while parsing old-style project.godot construct";
++			r_err_str = "Unexpected EOF while parsing old-style project.mpro construct";
+ 			return ERR_PARSE_ERROR;
+ 		}
+ 
+diff --git a/main/main.cpp b/main/main.cpp
+index c65e6ba..5c42187 100644
+--- a/main/main.cpp
++++ b/main/main.cpp
+@@ -1578,7 +1578,7 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
+ 				OS::get_singleton()->print("Missing number of iterations, aborting.\n");
+ 				goto error;
+ 			}
+-		} else if (arg.ends_with("project.godot")) {
++		} else if (arg.ends_with("project.godot") || arg.ends_with("project.mpro")) {
+ 			String path;
+ 			String file = arg;
+ 			int sep = MAX(file.rfind_char('/'), file.rfind_char('\\'));

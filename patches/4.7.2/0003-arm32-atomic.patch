@@ -1,0 +1,24 @@
+diff --git a/core/templates/safe_refcount.h b/core/templates/safe_refcount.h
+index 16b605e..b68ff41 100644
+--- a/core/templates/safe_refcount.h
++++ b/core/templates/safe_refcount.h
+@@ -63,7 +63,9 @@ template <typename T>
+ class SafeNumeric {
+ 	std::atomic<T> value;
+ 
++#if !defined(__arm__)
+ 	static_assert(std::atomic<T>::is_always_lock_free);
++#endif
+ 
+ public:
+ 	_ALWAYS_INLINE_ void set(T p_value) {
+@@ -154,7 +156,9 @@ public:
+ class SafeFlag {
+ 	std::atomic_bool flag;
+ 
++#if !defined(__arm__)
+ 	static_assert(std::atomic_bool::is_always_lock_free);
++#endif
+ 
+ public:
+ 	_ALWAYS_INLINE_ bool is_set() const {
