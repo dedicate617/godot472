@@ -86,3 +86,28 @@ index e821786..9d32474 100644
  	SetWindowLongPtr(wd.hWnd, GWL_STYLE, style);
  	SetWindowLongPtr(wd.hWnd, GWL_EXSTYLE, style_ex);
  
+diff --git a/platform/windows/SCsub b/platform/windows/SCsub
+index 71316b7..063938e 100644
+--- a/platform/windows/SCsub
++++ b/platform/windows/SCsub
+@@ -134,17 +134,17 @@ if env["windows_subsystem"] == "gui":
+     res_wrap_obj = env_wrap.RES(res_wrap_target, res_wrap_file)
+     env_wrap.Depends(res_wrap_obj, "#core/version_generated.gen.h")
+ 
++    env_wrap["LIBS"] = []
+     if env.msvc:
+         env_wrap.Append(LINKFLAGS=["/SUBSYSTEM:CONSOLE"])
+-        env_wrap.Append(LINKFLAGS=["version.lib"])
++        env_wrap.Append(LINKFLAGS=["version.lib", "shlwapi.lib"])
+     else:
+         env_wrap.Append(LINKFLAGS=["-Wl,--subsystem,console"])
+-        env_wrap.Append(LIBS=["version"])
++        env_wrap.Append(LIBS=["version", "shlwapi"])
+ 
+     prog_wrap = env_wrap.add_program("#bin/godot", common_win_wrap + res_wrap_obj, PROGSUFFIX=env["PROGSUFFIX_WRAP"])
+     arrange_program_clean(prog_wrap)
+     env_wrap.Depends(prog_wrap, prog)
+-    sources += common_win_wrap + res_wrap_obj
+ 
+ if env["d3d12"]:
+     dxc_target_aliases = {

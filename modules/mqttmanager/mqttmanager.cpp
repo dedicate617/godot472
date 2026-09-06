@@ -93,7 +93,6 @@ void MqttManager::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("MqttLostconnect"));
 	ADD_SIGNAL(MethodInfo("MqttDisconnected"));
 	ADD_SIGNAL(MethodInfo("MqttMsgReceived", PropertyInfo(Variant::STRING, "topic"), PropertyInfo(Variant::STRING, "msg"), PropertyInfo(Variant::INT, "qos")));
-	ADD_SIGNAL(MethodInfo("MqttMsgReceived1", PropertyInfo(Variant::STRING, "topic"), PropertyInfo(Variant::STRING, "msg"), PropertyInfo(Variant::INT, "qos")));
 	ADD_SIGNAL(MethodInfo("MqttProcessRequest", PropertyInfo(Variant::STRING, "req_topic"), PropertyInfo(Variant::STRING, "req_msg"), PropertyInfo(Variant::STRING, "rsp_topic")));
 
 	ClassDB::bind_method(D_METHOD("init", "prjPath"), &MqttManager::init, DEFVAL(""));
