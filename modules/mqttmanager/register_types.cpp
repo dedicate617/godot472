@@ -7,7 +7,7 @@
 #include "mqttmanager.h"
 
 #ifdef _WIN32
-//#include <Winsock2.h>
+#include <winsock2.h>
 #endif /* _WIN32 */
 
 static MqttManager *mqttmanager = nullptr;

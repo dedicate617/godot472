@@ -1,5 +1,6 @@
 #include "qtwindow.h"
 
+#include "core/object/class_db.h"
 #include "core/os/time.h"
 #include "core/os/keyboard.h"
 

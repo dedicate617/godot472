@@ -22,7 +22,11 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import List, Optional, Tuple, Dict, Any
+from typing import List, Optional, Tuple, Dict, Any, Union
+
+def safe_path(p: Any) -> Path:
+    """Normalize path to absolute without resolving mapped network drives to UNC on Windows."""
+    return Path(os.path.abspath(str(p)))
 
 # ANSI Color codes for formatted console output
 COLOR_RESET = "\033[0m"
@@ -127,7 +131,7 @@ class UpstreamSyncer:
         repo_url: str = "https://github.com/godotengine/godot.git",
         verbose: bool = False,
     ):
-        self.repo_root = repo_root.resolve()
+        self.repo_root = safe_path(repo_root)
         self.version = version.strip()
         self.dry_run = dry_run
         self.skip_clone = skip_clone
@@ -138,14 +142,14 @@ class UpstreamSyncer:
 
         # Target directory resolution
         if target_dir is not None:
-            self.target_dir = Path(target_dir).resolve()
+            self.target_dir = safe_path(target_dir)
         else:
             version_clean = self.version.split("-")[0].lstrip("v")
-            self.target_dir = (self.repo_root.parent / f"godot.{version_clean}").resolve()
+            self.target_dir = safe_path(self.repo_root.parent / f"godot.{version_clean}")
 
         # Patches and Assets directories resolution
         self.patches_dir = self._resolve_patches_dir()
-        self.assets_dir = (self.repo_root / "patches" / "assets").resolve()
+        self.assets_dir = safe_path(self.repo_root / "patches" / "assets")
 
         # Execution statistics
         self.stats = {
@@ -167,9 +171,9 @@ class UpstreamSyncer:
         ]
         for c in candidates:
             if c.is_dir():
-                return c.resolve()
+                return safe_path(c)
         # Default fallback even if doesn't exist yet
-        return (patches_base / self.version.split("-")[0]).resolve()
+        return safe_path(patches_base / self.version.split("-")[0])
 
     def run_command(
         self,
@@ -301,7 +305,7 @@ class UpstreamSyncer:
             print(f"    - {p.name}")
 
         for patch in patch_files:
-            patch_abs = str(patch.resolve())
+            patch_abs = str(safe_path(patch))
             log_info(f"Processing patch: {patch.name}...")
             self.stats["patches_checked"] += 1
 
@@ -490,9 +494,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser = create_parser()
     args = parser.parse_args(argv)
 
-    repo_root = Path(__file__).resolve().parent.parent
+    repo_root = safe_path(Path(__file__).parent.parent)
 
-    target_path = Path(args.target_dir).resolve() if args.target_dir else None
+    target_path = safe_path(args.target_dir) if args.target_dir else None
 
     syncer = UpstreamSyncer(
         repo_root=repo_root,

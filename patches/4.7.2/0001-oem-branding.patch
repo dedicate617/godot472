@@ -1,36 +1,49 @@
-diff --git a/editor/editor_about.cpp b/editor/editor_about.cpp
-index 6b592ba..3c7941a 100644
---- a/editor/editor_about.cpp
-+++ b/editor/editor_about.cpp
-@@ -171,7 +171,7 @@ ScrollContainer *EditorAbout::_populate_list(const String &p_name, const List<St
+diff --git a/SConstruct b/SConstruct
+index 920c754..0e736a6 100644
+--- a/SConstruct
++++ b/SConstruct
+@@ -2,7 +2,7 @@
+ from misc.utility.scons_hints import *
+ 
+ EnsureSConsVersion(4, 4)
+-EnsurePythonVersion(3, 9)
++EnsurePythonVersion(3, 8)
+ 
+ # System
+ import glob
+diff --git a/editor/gui/editor_about.cpp b/editor/gui/editor_about.cpp
+index d65275e..323beeb 100644
+--- a/editor/gui/editor_about.cpp
++++ b/editor/gui/editor_about.cpp
+@@ -57,7 +57,7 @@ void EditorAbout::_notification(int p_what) {
+ 	switch (p_what) {
+ 		case NOTIFICATION_TRANSLATION_CHANGED: {
+ 			_about_text_label->set_text(
+-					String(U"© 2014-present ") + TTR("Godot Engine contributors") + ".\n" +
++					String(U"© 2014-present ") + TTR("MindStudio Engine contributors") + ".\n" +
+ 					String(U"© 2007-2014 Juan Linietsky, Ariel Manzur.\n"));
+ 
+ 			_project_manager_label->set_text(TTR("Project Manager", "Job Title"));
+@@ -211,7 +211,7 @@ Control *EditorAbout::_create_section(Control *p_parent, const String &p_title,
  }
  
  EditorAbout::EditorAbout() {
--	set_title(TTR("Thanks from the Godot community!"));
-+	set_title(TTR("Thanks from the MindStudio community!"));
+-	set_title(TTRC("Thanks from the Godot community!"));
++	set_title(TTRC("Thanks from the MindStudio community!"));
  	set_hide_on_ok(true);
  
  	VBoxContainer *vbc = memnew(VBoxContainer);
-@@ -198,7 +198,7 @@ EditorAbout::EditorAbout() {
- 	Label *about_text = memnew(Label);
- 	about_text->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
- 	about_text->set_text(
--			String::utf8("\xc2\xa9 2014-present ") + TTR("Godot Engine contributors") + "." +
-+			String::utf8("\xc2\xa9 2014-present ") + TTR("MindStudio Engine contributors") + "." +
- 			String::utf8("\n\xc2\xa9 2007-2014 Juan Linietsky, Ariel Manzur.\n"));
- 	version_info_vbc->add_child(about_text);
+@@ -306,7 +306,7 @@ EditorAbout::EditorAbout() {
+ 	license_thirdparty->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+ 	tc->add_child(license_thirdparty);
  
-@@ -270,7 +270,7 @@ EditorAbout::EditorAbout() {
- 	Label *tpl_label = memnew(Label);
+-	Label *tpl_label = memnew(Label(TTRC("Godot Engine relies on a number of third-party free and open source libraries, all compatible with the terms of its MIT license. The following is an exhaustive list of all such third-party components with their respective copyright statements and license terms.")));
++	Label *tpl_label = memnew(Label(TTRC("MindStudio Engine relies on a number of third-party free and open source libraries, all compatible with the terms of its MIT license. The following is an exhaustive list of all such third-party components with their respective copyright statements and license terms.")));
+ 	tpl_label->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
  	tpl_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
  	tpl_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
--	tpl_label->set_text(TTR("Godot Engine relies on a number of third-party free and open source libraries, all compatible with the terms of its MIT license. The following is an exhaustive list of all such third-party components with their respective copyright statements and license terms."));
-+	tpl_label->set_text(TTR("MindStudio Engine relies on a number of third-party free and open source libraries, all compatible with the terms of its MIT license. The following is an exhaustive list of all such third-party components with their respective copyright statements and license terms."));
- 	tpl_label->set_size(Size2(630, 1) * EDSCALE);
- 	license_thirdparty->add_child(tpl_label);
- 
 diff --git a/version.py b/version.py
-index 4b0e55c..9211244 100644
+index a203d93..40a7a40 100644
 --- a/version.py
 +++ b/version.py
 @@ -1,9 +1,9 @@

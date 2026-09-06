@@ -53,7 +53,11 @@ import time
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+def safe_path(p: Any) -> Path:
+    """Normalize path to absolute without resolving mapped network drives to UNC on Windows."""
+    return Path(os.path.abspath(str(p)))
 
 # ANSI Color codes for terminal logging
 COLOR_RESET = "\033[0m"
@@ -103,7 +107,7 @@ def log_step(msg: str) -> None:
 
 def probe_repo_root() -> Path:
     """Resolve the root directory of the mindscada-engine-ext repository."""
-    return Path(__file__).resolve().parent.parent
+    return safe_path(Path(__file__).parent.parent)
 
 
 def probe_godot_dir(repo_root: Path, custom_path: Optional[str] = None) -> Path:
@@ -119,7 +123,7 @@ def probe_godot_dir(repo_root: Path, custom_path: Optional[str] = None) -> Path:
     7. Fallback: ../godot.4.7.2
     """
     if custom_path:
-        p = Path(custom_path).resolve()
+        p = safe_path(custom_path)
         if p.name == "bin" and p.is_dir():
             return p.parent
         return p
@@ -132,19 +136,19 @@ def probe_godot_dir(repo_root: Path, custom_path: Optional[str] = None) -> Path:
 
     for cand in candidates:
         if (cand / "bin").is_dir() or (cand / "SConstruct").is_file():
-            return cand.resolve()
+            return safe_path(cand)
 
     for cand in candidates:
         if cand.is_dir():
-            return cand.resolve()
+            return safe_path(cand)
 
     if (repo_root.parent / "SConstruct").is_file() or (repo_root.parent / "bin").is_dir():
-        return repo_root.parent.resolve()
+        return safe_path(repo_root.parent)
 
     if (Path.cwd() / "SConstruct").is_file() or (Path.cwd() / "bin").is_dir():
-        return Path.cwd().resolve()
+        return safe_path(Path.cwd())
 
-    return (repo_root.parent / "godot.4.7.2").resolve()
+    return safe_path(repo_root.parent / "godot.4.7.2")
 
 
 def resolve_bin_dir(godot_dir: Path) -> Path:
@@ -830,7 +834,7 @@ def run_packaging(args: argparse.Namespace) -> int:
     repo_root = probe_repo_root()
     godot_dir = probe_godot_dir(repo_root, args.godot_dir)
     bin_dir = resolve_bin_dir(godot_dir)
-    dist_dir = Path(args.dist_dir).resolve() if args.dist_dir else repo_root / "dist"
+    dist_dir = safe_path(args.dist_dir) if args.dist_dir else safe_path(repo_root / "dist")
     version = args.version.strip()
 
     banner = "=" * 75

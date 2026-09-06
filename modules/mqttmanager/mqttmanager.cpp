@@ -2,6 +2,7 @@
 #include "core/variant/array.h"
 #include "core/variant/dictionary.h"
 #include "core/object/message_queue.h"
+#include "core/object/callable_mp.h"
 #include "core/os/os.h"
 #include "core/io/json.h"
 #include "core/io/file_access.h"

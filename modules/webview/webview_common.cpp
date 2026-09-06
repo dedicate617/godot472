@@ -4,6 +4,8 @@
 
 #include "webview.h"
 #include "webview_icons.h"
+#include "core/object/class_db.h"
+
 
 int WebViewOverlay::err_status = -1;
 

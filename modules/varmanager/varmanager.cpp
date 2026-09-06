@@ -3,6 +3,7 @@
 #include "varmanager.h"
 #include "core/variant/array.h"
 #include "core/object/message_queue.h"
+#include "core/object/callable_mp.h"
 #include "core/os/os.h"
 #include "core/io/config_file.h"
 
@@ -1704,7 +1705,7 @@ void VarManager::notifyRelatedControls(const String &varName, const Variant &val
 				// case 3: MessageQueue push_call
 				else if (m_varNotifyMode == VarNotifyMode::MESSAGEQUEUE)
 				{
-					MessageQueue::get_singleton()->push_call(obj, "_on_varidchange", (int)(uint64_t)id, gdstr, value);
+					MessageQueue::get_singleton()->push_call(obj->get_instance_id(), "_on_varidchange", (int)(uint64_t)id, gdstr, value);
 				}
 			}
 		}
@@ -1801,7 +1802,7 @@ void VarManager::handleEvent(const unsigned int &eventId, const std::map<std::st
 				subscribedEventID_ObjectID_funcName_dict.erase((uint32_t)eventId);
 			}
 			else
-				MessageQueue::get_singleton()->push_call(node, funcName, eventId, eventDataDict);
+				MessageQueue::get_singleton()->push_call(node->get_instance_id(), funcName, eventId, eventDataDict);
 		}
 	}
 	if (has_signal("eventTriggered"))
@@ -1882,7 +1883,7 @@ void VarManager::handleInvokeMethodCallback(const unsigned int &reqId, const std
 				invokedMethodID_ObjectID_funcName_dict.erase((uint32_t)reqId);
 			}
 			else
-				MessageQueue::get_singleton()->push_call(node, funcName, reqId, outputsArray);
+				MessageQueue::get_singleton()->push_call(node->get_instance_id(), funcName, reqId, outputsArray);
 		}
 		
 		invokedMethodID_ObjectID_funcName_dict.erase((uint32_t)reqId);

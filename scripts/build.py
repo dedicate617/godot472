@@ -28,7 +28,11 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+def safe_path(p: Any) -> Path:
+    """Normalize path to absolute without resolving mapped network drives to UNC on Windows."""
+    return Path(os.path.abspath(str(p)))
 
 # ANSI Color codes for terminal logging
 COLOR_RESET = "\033[0m"
@@ -97,7 +101,7 @@ def detect_host_arch() -> str:
 
 def probe_repo_root() -> Path:
     """Resolve the root directory of the mindscada-engine-ext repository."""
-    return Path(__file__).resolve().parent.parent
+    return safe_path(Path(__file__).parent.parent)
 
 
 def probe_godot_dir(repo_root: Path, custom_path: Optional[str] = None) -> Path:
@@ -113,7 +117,7 @@ def probe_godot_dir(repo_root: Path, custom_path: Optional[str] = None) -> Path:
     7. Fallback: ../godot.4.7.2
     """
     if custom_path:
-        return Path(custom_path).resolve()
+        return safe_path(custom_path)
 
     candidates = [
         repo_root.parent / "godot.4.7.2",
@@ -123,19 +127,19 @@ def probe_godot_dir(repo_root: Path, custom_path: Optional[str] = None) -> Path:
 
     for cand in candidates:
         if (cand / "SConstruct").is_file():
-            return cand.resolve()
+            return safe_path(cand)
 
     for cand in candidates:
         if cand.is_dir():
-            return cand.resolve()
+            return safe_path(cand)
 
     if (repo_root.parent / "SConstruct").is_file():
-        return repo_root.parent.resolve()
+        return safe_path(repo_root.parent)
 
     if (Path.cwd() / "SConstruct").is_file():
-        return Path.cwd().resolve()
+        return safe_path(Path.cwd())
 
-    return (repo_root.parent / "godot.4.7.2").resolve()
+    return safe_path(repo_root.parent / "godot.4.7.2")
 
 
 # ---------------------------------------------------------------------------
@@ -143,10 +147,11 @@ def probe_godot_dir(repo_root: Path, custom_path: Optional[str] = None) -> Path:
 # ---------------------------------------------------------------------------
 
 def is_msvc_active() -> bool:
-    """Check whether MSVC compiler environment is already active in current process."""
+    """Check whether MSVC x64 compiler environment is already active in current process."""
     if os.environ.get("VCINSTALLDIR") or os.environ.get("VSCMD_VER"):
-        return True
-    return shutil.which("cl") is not None
+        if os.environ.get("VSCMD_ARG_TGT_ARCH") == "x64":
+            return True
+    return False
 
 
 def find_vswhere() -> Optional[str]:
@@ -224,11 +229,28 @@ def extract_vcvars_env(vcvars_bat: str) -> Dict[str, str]:
     return env
 
 
+def ensure_gettext_in_path() -> None:
+    """Ensure msgfmt / gettext binaries are present in PATH if available."""
+    gettext_candidates = [
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "gettext-iconv" / "bin",
+        Path(r"C:\Program Files\gettext-iconv\bin"),
+        Path(r"C:\Program Files (x86)\gettext-iconv\bin"),
+    ]
+    for gc in gettext_candidates:
+        if (gc / "msgfmt.exe").is_file():
+            if str(gc) not in os.environ.get("PATH", ""):
+                os.environ["PATH"] = f"{gc}{os.pathsep}{os.environ.get('PATH', '')}"
+                log_info(f"Prepended gettext tools to PATH: {gc}")
+            break
+
+
 def setup_msvc_environment(dry_run: bool = False, custom_vcvars: Optional[str] = None) -> bool:
     """
     Ensure MSVC build environment is active.
     If not active, locate vcvars64.bat and inject variables into os.environ.
     """
+    ensure_gettext_in_path()
+
     if is_msvc_active():
         log_info("MSVC environment is already active.")
         return True
@@ -247,6 +269,7 @@ def setup_msvc_environment(dry_run: bool = False, custom_vcvars: Optional[str] =
         log_info("Activating MSVC x64 build environment...")
         new_env = extract_vcvars_env(vcvars_bat)
         os.environ.update(new_env)
+        ensure_gettext_in_path()
         log_success(f"MSVC environment activated successfully (VCINSTALLDIR: {os.environ.get('VCINSTALLDIR', 'N/A')})")
         return True
     except Exception as e:
@@ -365,7 +388,7 @@ def assemble_scons_args(
     cmd.append("separate_debug_symbols=yes")
 
     # 5. Custom modules path (forward slashes for cross-platform robustness)
-    cmd.append(f"custom_modules={modules_dir.resolve().as_posix()}")
+    cmd.append(f"custom_modules={modules_dir.as_posix()}")
 
     # 6. Core module enablement flags
     cmd.append("module_mono_enabled=no")
@@ -394,6 +417,10 @@ def assemble_scons_args(
             norm_cver = compiler_ver if compiler_ver.startswith("-") else f"-{compiler_ver}"
             cmd.append(f"COMPILERVER={norm_cver}")
     else:
+        # Windows platform options: disable external optional drivers if Agility SDK / AccessKit not configured
+        cmd.append("d3d12=no")
+        cmd.append("accesskit=no")
+        cmd.append("linkflags=/FORCE:MULTIPLE")
         if compiler_ver:
             norm_cver = compiler_ver if compiler_ver.startswith("-") else f"-{compiler_ver}"
             cmd.append(f"COMPILERVER={norm_cver}")
@@ -599,8 +626,8 @@ def run_build(args: argparse.Namespace) -> int:
     """Execute or simulate build driver process."""
     repo_root = probe_repo_root()
     godot_dir = probe_godot_dir(repo_root, args.godot_dir)
-    modules_dir = Path(args.modules_dir).resolve() if args.modules_dir else (repo_root / "modules").resolve()
-    deps_dir = Path(args.deps_dir).resolve() if args.deps_dir else (repo_root / "deps").resolve()
+    modules_dir = safe_path(args.modules_dir) if args.modules_dir else safe_path(repo_root / "modules")
+    deps_dir = safe_path(args.deps_dir) if args.deps_dir else safe_path(repo_root / "deps")
 
     # Collect extra arguments
     extra_args: List[str] = []
@@ -633,7 +660,7 @@ def run_build(args: argparse.Namespace) -> int:
     print(banner)
 
     # Export MINDSCADA_DEPS_ROOT environment variable
-    deps_root_str = str(deps_dir.resolve())
+    deps_root_str = str(deps_dir)
     os.environ["MINDSCADA_DEPS_ROOT"] = deps_root_str
     log_info(f"Exported Environment Variable: MINDSCADA_DEPS_ROOT = {deps_root_str}")
 

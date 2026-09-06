@@ -9,11 +9,13 @@
 #define MQTTTRANSFERINTERFACE_H
 
 #include "core/variant/variant.h"
+#include "core/object/class_db.h"
 #include <iostream>
 #include <map>
 #include <vector>
 
 class MqttTransferInterface : public Object {
+	GDCLASS(MqttTransferInterface, Object);
 public:
 	//MqttTransferInterface(){};
 	//virtual ~MqttTransferInterface(){};

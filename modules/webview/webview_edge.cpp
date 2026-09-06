@@ -9,6 +9,14 @@
 #include "core/os/memory.h"
 #include "core/templates/vector.h"
 #include "scene/main/window.h"
+#if __has_include("servers/display/display_server.h")
+#include "servers/display/display_server.h"
+#include "servers/display/display_server_enums.h"
+#define DS_WINDOW_HANDLE DisplayServerEnums::WINDOW_HANDLE
+#elif __has_include("servers/display_server.h")
+#include "servers/display_server.h"
+#define DS_WINDOW_HANDLE DisplayServer::WINDOW_HANDLE
+#endif
 
 #include <shlwapi.h>
 #include <Webview2.h>
@@ -232,10 +240,10 @@ void WebViewOverlay::_notification(int p_what) {
 		} break;
 		case NOTIFICATION_INTERNAL_PROCESS: {
 			if (!Engine::get_singleton()->is_editor_hint() && (data->view == nullptr) && (err_status == 0)) {
-				HWND hwnd = (HWND)DisplayServer::get_singleton()->window_get_native_handle(DisplayServer::WINDOW_HANDLE);
+				HWND hwnd = (HWND)DisplayServer::get_singleton()->window_get_native_handle(DS_WINDOW_HANDLE);
 				Window *w = get_window();
 				if(w)
-					hwnd = (HWND)DisplayServer::get_singleton()->window_get_native_handle(DisplayServer::WINDOW_HANDLE,w->get_window_id());
+					hwnd = (HWND)DisplayServer::get_singleton()->window_get_native_handle(DS_WINDOW_HANDLE,w->get_window_id());
 				//HWND hwnd = (HWND)OS::get_singleton()->get_native_handle(OS::WINDOW_HANDLE);
 				if (hwnd != nullptr) {
 					float sc = DisplayServer::get_singleton()->screen_get_max_scale();

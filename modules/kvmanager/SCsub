@@ -66,10 +66,14 @@ def resolve_deps_root(env, default_fallback):
         for key in keys:
             keyed_dir = os.path.join(env_root, key)
             if os.path.isdir(keyed_dir):
-                print(f"[kvmanager] Found dependencies in MINDSCADA_DEPS_ROOT/{key}: {keyed_dir}")
-                return keyed_dir
-        print(f"[kvmanager] Using MINDSCADA_DEPS_ROOT: {env_root}")
-        return env_root
+                entries = [e for e in os.listdir(keyed_dir) if e != ".gitkeep"]
+                if entries:
+                    print(f"[kvmanager] Found dependencies in MINDSCADA_DEPS_ROOT/{key}: {keyed_dir}")
+                    return keyed_dir
+        root_entries = [e for e in os.listdir(env_root) if e not in [".gitkeep", "windows_x64", "linux_arm32", "linux_arm64"]]
+        if root_entries:
+            print(f"[kvmanager] Using MINDSCADA_DEPS_ROOT: {env_root}")
+            return env_root
 
     # 3. Fallback compatibility with local default
     print(f"[kvmanager] Using fallback dependencies path: {default_fallback}")
