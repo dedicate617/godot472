@@ -51,10 +51,23 @@ elif env["platform"] == "windows":
     ])
 
 elif env["platform"] == "linuxbsd":
-    env.ParseConfig("pkg-config gtk+-3.0 webkit2gtk-4.0 --libs")
-    env_native_webview.Append(CFLAGS=["-Wall", "-Wunused", "-DG_DISABLE_DEPRECATED", "-DGDK_DISABLE_DEPRECATED", "-DGDK_PIXBUF_DISABLE_DEPRECATED", "-DGTK_DISABLE_DEPRECATED"])
-    env_native_webview.ParseConfig("pkg-config gtk+-3.0 webkit2gtk-4.0 --cflags")
-    env_native_webview.add_source_files(env.modules_sources, "webview_gtk.cpp")
+    import subprocess
+    has_gtk_webkit = False
+    try:
+        ret = subprocess.run(["pkg-config", "--exists", "gtk+-3.0", "webkit2gtk-4.0"], capture_output=True)
+        if ret.returncode == 0:
+            has_gtk_webkit = True
+    except Exception:
+        has_gtk_webkit = False
+
+    if has_gtk_webkit:
+        env.ParseConfig("pkg-config gtk+-3.0 webkit2gtk-4.0 --libs")
+        env_native_webview.Append(CFLAGS=["-Wall", "-Wunused", "-DG_DISABLE_DEPRECATED", "-DGDK_DISABLE_DEPRECATED", "-DGDK_PIXBUF_DISABLE_DEPRECATED", "-DGTK_DISABLE_DEPRECATED"])
+        env_native_webview.ParseConfig("pkg-config gtk+-3.0 webkit2gtk-4.0 --cflags")
+        env_native_webview.add_source_files(env.modules_sources, "webview_gtk.cpp")
+    else:
+        print("[webview] gtk+-3.0 or webkit2gtk-4.0 not found via pkg-config, using webview_dummy.cpp")
+        env_native_webview.add_source_files(env.modules_sources, "webview_dummy.cpp")
 
 else:
     env_native_webview.add_source_files(env.modules_sources, "webview_dummy.cpp")
