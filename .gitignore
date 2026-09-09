@@ -19,6 +19,7 @@ scratch/
 logs/
 *.log
 .cache/
+dist/
 
 # Allow precompiled vendor libraries in modules and deps
 !modules/**/lib/**/*.lib
