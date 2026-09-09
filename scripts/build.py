@@ -503,9 +503,15 @@ def assemble_scons_args(
         cmd.append("use_llvm=no")
         if arch == "arm32":
             # Hardware floating-point & Cortex-A72 optimization for pi32
+            # ZSTD_DISABLE_ASM prevents zstd asm x86_64 symbols from being referenced
+            # when cross-compiling for ARM (the .S file is x86_64-only but the C
+            # preprocessor may still detect ZSTD_ASM_SUPPORTED=1 on the host).
             cmd.append("disable_exceptions=yes")
-            cmd.append("CCFLAGS=-mcpu=cortex-a72 -mtune=cortex-a72 -mfpu=neon-fp-armv8 -mfloat-abi=hard -mlittle-endian -munaligned-access")
+            cmd.append("CCFLAGS=-mcpu=cortex-a72 -mtune=cortex-a72 -mfpu=neon-fp-armv8 -mfloat-abi=hard -mlittle-endian -munaligned-access -DZSTD_DISABLE_ASM")
             cmd.append("CXXFLAGS=-std=c++17")
+        elif arch == "arm64":
+            # Disable zstd x86_64 asm for ARM64 cross-compilation
+            cmd.append("CCFLAGS=-DZSTD_DISABLE_ASM")
 
         if compiler_ver:
             norm_cver = compiler_ver if compiler_ver.startswith("-") else f"-{compiler_ver}"
