@@ -18,6 +18,7 @@ __pycache__/
 scratch/
 logs/
 *.log
+.cache/
 
 # Allow precompiled vendor libraries in modules and deps
 !modules/**/lib/**/*.lib

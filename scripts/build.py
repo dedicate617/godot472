@@ -325,11 +325,21 @@ def get_build_plan(target: str, dev: bool, build_all: bool) -> List[Dict[str, An
       2. editor release
       3. template_debug
       4. template_release
+    If target == 'dist', returns the 3 distribution targets:
+      1. editor release
+      2. template_debug
+      3. template_release
     Otherwise returns single specified target.
     """
     if build_all or target == "all":
         return [
             {"target": "editor", "dev": True, "name": "editor dev"},
+            {"target": "editor", "dev": False, "name": "editor release"},
+            {"target": "template_debug", "dev": False, "name": "template_debug"},
+            {"target": "template_release", "dev": False, "name": "template_release"},
+        ]
+    if target == "dist":
+        return [
             {"target": "editor", "dev": False, "name": "editor release"},
             {"target": "template_debug", "dev": False, "name": "template_debug"},
             {"target": "template_release", "dev": False, "name": "template_release"},
@@ -350,6 +360,8 @@ def assemble_scons_args(
     compiler_ver: Optional[str] = None,
     vsproj: bool = False,
     extra_args: Optional[List[str]] = None,
+    cache_path: Optional[Path] = None,
+    cache_limit: Optional[int] = None,
 ) -> List[str]:
     """
     Assemble the complete SCons command arguments list according to project specifications.
@@ -432,7 +444,13 @@ def assemble_scons_args(
     # 10. Concurrency jobs
     cmd.append(f"-j{jobs}")
 
-    # 11. Extra custom arguments
+    # 11. SCons build cache
+    if cache_path:
+        cmd.append(f"cache_path={cache_path.as_posix()}")
+        if cache_limit and cache_limit > 0:
+            cmd.append(f"cache_limit={cache_limit}")
+
+    # 12. Extra custom arguments
     if extra_args:
         cmd.extend(extra_args)
 
@@ -514,9 +532,9 @@ Examples:
     )
     parser.add_argument(
         "--target",
-        choices=["editor", "template_debug", "template_release", "all"],
+        choices=["editor", "template_debug", "template_release", "dist", "all"],
         default="editor",
-        help="Target build type (default: 'editor')",
+        help="Target build type (default: 'editor', 'dist'=editor release+templates, 'all'=all 4 targets)",
     )
     parser.add_argument(
         "--dev",
@@ -530,6 +548,12 @@ Examples:
         default=False,
         dest="build_all",
         help="One-click pipeline build for all 4 core targets (editor dev, editor release, template_debug, template_release)",
+    )
+    parser.add_argument(
+        "--dist",
+        action="store_true",
+        default=False,
+        help="One-click distribution build for 3 release targets (editor release, template_debug, template_release)",
     )
 
     # Directory Paths
@@ -550,6 +574,24 @@ Examples:
         type=str,
         default=None,
         help="Path to third-party dependencies root (default: '<repo_root>/deps')",
+    )
+    parser.add_argument(
+        "--cache-path",
+        type=str,
+        default=None,
+        help="SCons compilation cache directory (default: '<repo_root>/.cache/scons')",
+    )
+    parser.add_argument(
+        "--cache-limit",
+        type=int,
+        default=20,
+        help="SCons compilation cache size limit in GiB (default: 20 GiB, 0=unlimited)",
+    )
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        default=False,
+        help="Disable SCons compilation cache",
     )
 
     # Execution & Concurrency
@@ -638,8 +680,18 @@ def run_build(args: argparse.Namespace) -> int:
             if t != "--":
                 extra_args.append(t)
 
-    # Generate target plan
-    plan = get_build_plan(args.target, args.dev, args.build_all)
+    # Resolve build target plan
+    target_arg = "dist" if args.dist else args.target
+    plan = get_build_plan(target_arg, args.dev, args.build_all)
+
+    # SCons Cache Configuration
+    cache_path: Optional[Path] = None
+    if not args.no_cache:
+        if args.cache_path:
+            cache_path = safe_path(args.cache_path)
+        else:
+            cache_path = safe_path(repo_root / ".cache" / "scons")
+        cache_path.mkdir(parents=True, exist_ok=True)
 
     # Print build summary header
     banner = "=" * 70
@@ -653,6 +705,10 @@ def run_build(args: argparse.Namespace) -> int:
     log_info(f"Godot Source Dir   : {godot_dir}")
     log_info(f"Modules Dir        : {modules_dir}")
     log_info(f"Dependencies Dir   : {deps_dir}")
+    if cache_path:
+        log_info(f"SCons Build Cache  : {cache_path} (limit={args.cache_limit} GiB)")
+    else:
+        log_info("SCons Build Cache  : Disabled")
     log_info(f"Parallel Jobs      : {args.jobs}")
     log_info(f"Build Plan Tasks   : {len(plan)} target(s)")
     for i, p in enumerate(plan, 1):
@@ -700,6 +756,8 @@ def run_build(args: argparse.Namespace) -> int:
             compiler_ver=args.compiler_ver,
             vsproj=args.vsproj,
             extra_args=extra_args,
+            cache_path=cache_path,
+            cache_limit=args.cache_limit,
         )
 
         cmd_display = format_command_display(scons_cmd)
