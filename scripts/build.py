@@ -396,8 +396,6 @@ def probe_custom_module_deps(
         env_root = os.environ.get("MINDSCADA_DEPS_ROOT", "")
         if env_root:
             has_deps = _dir_has_content(Path(env_root) / platform_key)
-            if not has_deps:
-                has_deps = _dir_has_content(Path(env_root))
 
     # 3. Check platform-specific local fallback paths (developer workstations)
     if not has_deps:
