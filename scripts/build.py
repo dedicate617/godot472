@@ -349,6 +349,78 @@ def get_build_plan(target: str, dev: bool, build_all: bool) -> List[Dict[str, An
     ]
 
 
+def probe_custom_module_deps(
+    deps_dir: Path,
+    platform_name: str,
+    arch: str,
+) -> Dict[str, bool]:
+    """
+    Probe whether third-party dependencies are available for each custom module.
+
+    Checks three locations in priority order:
+      1. deps/{platform}_{arch}/  (bundled in-repo dependencies)
+      2. MINDSCADA_DEPS_ROOT env var (CI or external dependency root)
+      3. Platform-specific local fallback paths (developer workstation)
+
+    Returns a dict of module_name -> bool indicating availability.
+    Modules 'webview' and 'qtwindow' always return True (they have built-in
+    dummy/system fallbacks in their SCsub).
+    """
+    # Normalize platform/arch keys the same way SCsub does
+    norm_plat = "linux" if platform_name in ("linux", "linuxbsd") else platform_name
+    if "arm64" in arch or "aarch64" in arch:
+        norm_arch = "arm64"
+    elif "arm" in arch:
+        norm_arch = "arm32"
+    elif "64" in arch:
+        norm_arch = "x64"
+    elif "86" in arch or "32" in arch:
+        norm_arch = "x86"
+    else:
+        norm_arch = arch
+
+    platform_key = f"{norm_plat}_{norm_arch}"
+
+    def _dir_has_content(p: Path) -> bool:
+        """Return True if directory exists and has entries beyond .gitkeep."""
+        if not p.is_dir():
+            return False
+        entries = [e for e in p.iterdir() if e.name != ".gitkeep"]
+        return len(entries) > 0
+
+    # 1. Check bundled deps/{platform}_{arch}/
+    has_deps = _dir_has_content(deps_dir / platform_key)
+
+    # 2. Check MINDSCADA_DEPS_ROOT
+    if not has_deps:
+        env_root = os.environ.get("MINDSCADA_DEPS_ROOT", "")
+        if env_root:
+            has_deps = _dir_has_content(Path(env_root) / platform_key)
+            if not has_deps:
+                has_deps = _dir_has_content(Path(env_root))
+
+    # 3. Check platform-specific local fallback paths (developer workstations)
+    if not has_deps:
+        if platform_name == "windows":
+            for fb in [Path("C:/opensource"), Path("C:/lib")]:
+                if fb.is_dir():
+                    has_deps = True
+                    break
+        elif platform_name in ("linux", "linuxbsd"):
+            for fb in [Path("/media/pi/A31C-5DF8")]:
+                if fb.is_dir():
+                    has_deps = True
+                    break
+
+    return {
+        "kvmanager": has_deps,
+        "varmanager": has_deps,
+        "mqttmanager": has_deps,
+        "webview": True,   # Has dummy fallback in SCsub
+        "qtwindow": True,  # Uses system APIs only, no third-party deps
+    }
+
+
 def assemble_scons_args(
     platform_name: str,
     arch: str,
@@ -362,6 +434,7 @@ def assemble_scons_args(
     extra_args: Optional[List[str]] = None,
     cache_path: Optional[Path] = None,
     cache_limit: Optional[int] = None,
+    deps_dir: Optional[Path] = None,
 ) -> List[str]:
     """
     Assemble the complete SCons command arguments list according to project specifications.
@@ -377,6 +450,9 @@ def assemble_scons_args(
       compiler_ver: Optional compiler version macro
       vsproj: Generate Visual Studio solution
       extra_args: Additional raw SCons arguments
+      cache_path: Path for SCons compilation cache
+      cache_limit: Cache size limit in GiB
+      deps_dir: Path to third-party deps root for auto-detection of module availability
     """
     cmd = [scons_bin]
 
@@ -402,13 +478,21 @@ def assemble_scons_args(
     # 5. Custom modules path (forward slashes for cross-platform robustness)
     cmd.append(f"custom_modules={modules_dir.as_posix()}")
 
-    # 6. Core module enablement flags
+    # 6. Core module enablement flags — auto-detect dependency availability
     cmd.append("module_mono_enabled=no")
-    cmd.append("module_kvmanager_enabled=yes")
-    cmd.append("module_varmanager_enabled=yes")
-    cmd.append("module_mqttmanager_enabled=yes")
-    cmd.append("module_webview_enabled=yes")
-    cmd.append("module_qtwindow_enabled=yes")
+
+    if deps_dir:
+        module_avail = probe_custom_module_deps(deps_dir, platform_name, arch)
+    else:
+        # If no deps_dir provided, assume all modules are available (backward compat)
+        module_avail = {m: True for m in ["kvmanager", "varmanager", "mqttmanager", "webview", "qtwindow"]}
+
+    for mod_name in ["kvmanager", "varmanager", "mqttmanager", "webview", "qtwindow"]:
+        enabled = module_avail.get(mod_name, True)
+        flag_val = "yes" if enabled else "no"
+        cmd.append(f"module_{mod_name}_enabled={flag_val}")
+        if not enabled:
+            log_warn(f"Module '{mod_name}' auto-disabled: third-party dependencies not found")
 
     # 7. Third-party dependency version macros
     cmd.append("OPEN62541VER=.v1.3.9")
@@ -758,6 +842,7 @@ def run_build(args: argparse.Namespace) -> int:
             extra_args=extra_args,
             cache_path=cache_path,
             cache_limit=args.cache_limit,
+            deps_dir=deps_dir,
         )
 
         cmd_display = format_command_display(scons_cmd)
