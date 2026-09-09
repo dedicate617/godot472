@@ -47,7 +47,7 @@ if errorlevel 1 (
 
 echo.
 echo ============================================================================
-echo [SUCCESS] Windows Release & Export Templates built and packaged successfully!
+echo [SUCCESS] Windows Release ^& Export Templates built and packaged successfully!
 echo Artifacts available in %CD%\dist\
 echo ============================================================================
 exit /b 0

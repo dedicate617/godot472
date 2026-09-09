@@ -713,16 +713,31 @@ def build_archive(
             for item in plan.items:
                 write_archive_entry(zf, item)
 
+        # Safely replace existing destination file (handling Windows file locking/antivirus delays)
         if out_archive.exists():
-            out_archive.unlink()
-        temp_archive.rename(out_archive)
+            for retry in range(5):
+                try:
+                    out_archive.unlink()
+                    break
+                except OSError:
+                    time.sleep(0.5)
+
+        for retry in range(5):
+            try:
+                shutil.move(str(temp_archive), str(out_archive))
+                break
+            except OSError:
+                time.sleep(0.5)
 
         archive_size_mb = out_archive.stat().st_size / (1024 * 1024)
         log_success(f"Generated archive: {out_archive} ({archive_size_mb:.2f} MB)")
         return out_archive
     except Exception as e:
         if temp_archive.exists():
-            temp_archive.unlink()
+            try:
+                temp_archive.unlink()
+            except OSError:
+                pass
         log_error(f"Failed to generate archive {out_archive}: {e}")
         return None
 
