@@ -502,6 +502,10 @@ def assemble_scons_args(
     if norm_plat == "linuxbsd":
         cmd.append("use_llvm=no")
         if arch == "arm32":
+            # Cross-compilation: must explicitly specify the ARM32 cross-compiler binaries.
+            # Without CC/CXX, SCons uses the native host g++ which rejects ARM-specific flags.
+            cmd.append("CC=arm-linux-gnueabihf-gcc")
+            cmd.append("CXX=arm-linux-gnueabihf-g++")
             # Hardware floating-point & Cortex-A72 optimization for pi32
             # ZSTD_DISABLE_ASM prevents zstd asm x86_64 symbols from being referenced
             # when cross-compiling for ARM (the .S file is x86_64-only but the C
@@ -511,6 +515,9 @@ def assemble_scons_args(
             cmd.append('cxxflags=-std=c++17')
             cmd.append('cppdefines=ZSTD_DISABLE_ASM')
         elif arch == "arm64":
+            # Cross-compilation: must explicitly specify the ARM64 cross-compiler binaries.
+            cmd.append("CC=aarch64-linux-gnu-gcc")
+            cmd.append("CXX=aarch64-linux-gnu-g++")
             # Disable zstd x86_64 asm for ARM64 cross-compilation
             cmd.append('cppdefines=ZSTD_DISABLE_ASM')
 
