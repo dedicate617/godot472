@@ -5,6 +5,8 @@ name: Build Matrix CI/CD
     branches:
       - master
       - main
+    tags:
+      - 'v*'
     paths-ignore:
       - '**.md'
       - 'docs/**'
@@ -44,6 +46,8 @@ jobs:
   build:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -104,6 +108,34 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ${{ matrix.apt-packages }}
 
+      - name: Resolve Godot Version and Release Tag
+        id: versions
+        shell: bash
+        run: |
+          # Derive plain version (e.g. 4.7.2) from the godot_version input
+          GODOT_VER="${{ inputs.godot_version || '4.7.2-stable' }}"
+          PLAIN_VER="${GODOT_VER%%-*}"    # strip -stable / -rc suffix
+          PLAIN_VER="${PLAIN_VER#v}"      # strip leading v
+
+          # If triggered by a git tag (refs/tags/v*), derive plain version from tag
+          # Tag format: v4.7.2-20260910 → 4.7.2
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            RELEASE_TAG="${{ github.ref_name }}"
+            PLAIN_VER=$(echo "$RELEASE_TAG" | sed 's/^v//' | cut -d'-' -f1)
+          else
+            # For branch pushes / PRs / manual dispatch: generate a date-based tag
+            BUILD_DATE=$(date -u +%Y%m%d)
+            RELEASE_TAG="v${PLAIN_VER}-${BUILD_DATE}"
+          fi
+
+          echo "godot_ver=${GODOT_VER}"    >> $GITHUB_OUTPUT
+          echo "plain_ver=${PLAIN_VER}"    >> $GITHUB_OUTPUT
+          echo "release_tag=${RELEASE_TAG}" >> $GITHUB_OUTPUT
+
+          echo "Godot version : ${GODOT_VER}"
+          echo "Plain version : ${PLAIN_VER}"
+          echo "Release tag   : ${RELEASE_TAG}"
+
       - name: Sync Godot Upstream and Apply Patches
         shell: bash
         run: |
@@ -112,7 +144,7 @@ jobs:
             EXTRA_ARGS="--dry-run"
           fi
           python scripts/sync_upstream.py \
-            --version "${{ inputs.godot_version || '4.7.2-stable' }}" \
+            --version "${{ steps.versions.outputs.godot_ver }}" \
             --repo-url "${{ inputs.godot_repo_url || 'https://github.com/godotengine/godot.git' }}" \
             $EXTRA_ARGS
 
@@ -148,9 +180,12 @@ jobs:
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             EXTRA_ARGS="--dry-run"
           fi
-          python scripts/package.py --platform ${{ matrix.package-platform }} $EXTRA_ARGS
+          python scripts/package.py \
+            --platform ${{ matrix.package-platform }} \
+            --version "${{ steps.versions.outputs.plain_ver }}" \
+            $EXTRA_ARGS
 
-      - name: Upload Build Artifacts
+      - name: Upload Build Artifacts (CI cache)
         if: ${{ inputs.dry_run != true }}
         uses: actions/upload-artifact@v4
         with:
@@ -158,3 +193,62 @@ jobs:
           path: dist/
           if-no-files-found: error
           retention-days: 14
+
+      # -----------------------------------------------------------------------
+      # GitHub Release: upload assets when triggered by a tag push (v*)
+      # or a workflow_dispatch from a tag ref.
+      # Each platform job independently uploads its own packaged assets.
+      # gh release create is idempotent — concurrent jobs safely race to create.
+      # -----------------------------------------------------------------------
+      - name: Create or Update GitHub Release and Upload Assets
+        if: >
+          inputs.dry_run != true &&
+          startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.versions.outputs.release_tag }}
+          PLAIN_VER: ${{ steps.versions.outputs.plain_ver }}
+        run: |
+          gh --version
+
+          RELEASE_NOTES="## MindSCADA Engine v${PLAIN_VER}
+
+          **Built from Godot ${PLAIN_VER} with MindSCADA custom modules and patches.**
+
+          ### Included Assets
+          | File | Description |
+          |------|-------------|
+          | \`MindStudio_v*_Windows_x86_64.zip\` | Windows x64 Editor + WebView2 runtime |
+          | \`MindSCADA_v*_export_templates_windows.tpz\` | Windows x64 Export Templates |
+          | \`MindSCADA_v*_export_templates_pi32.tpz\` | Linux ARM32 (Raspberry Pi 32-bit) Export Templates |
+          | \`MindSCADA_v*_export_templates_pi64.tpz\` | Linux ARM64 (Raspberry Pi 64-bit) Export Templates |
+          | \`checksums.sha256\` | SHA256 checksums manifest |
+
+          ### Installing Export Templates
+          In Godot Editor: **Project → Export → Manage Export Templates → Install from file (.tpz)**"
+
+          # Create release if it doesn't exist yet (idempotent, safe for parallel jobs)
+          if ! gh release view "${RELEASE_TAG}" --repo "${{ github.repository }}" > /dev/null 2>&1; then
+            echo "Creating release: ${RELEASE_TAG}"
+            gh release create "${RELEASE_TAG}" \
+              --repo "${{ github.repository }}" \
+              --title "MindSCADA Engine v${PLAIN_VER}" \
+              --notes "${RELEASE_NOTES}" \
+              --draft=false \
+              --prerelease=false
+          else
+            echo "Release ${RELEASE_TAG} already exists — uploading assets only."
+          fi
+
+          # Upload all dist/ archives and checksums for this platform
+          echo "Uploading dist/ assets for platform: ${{ matrix.name }}"
+          for asset in dist/*.zip dist/*.tpz dist/checksums.sha256; do
+            if [ -f "$asset" ]; then
+              echo "  → ${asset}"
+              gh release upload "${RELEASE_TAG}" "$asset" \
+                --repo "${{ github.repository }}" \
+                --clobber
+            fi
+          done
+          echo "Upload complete for ${{ matrix.name }}."
