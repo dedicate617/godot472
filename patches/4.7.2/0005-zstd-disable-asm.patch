@@ -1,0 +1,13 @@
+diff --git a/core/SCsub b/core/SCsub
+index d652758..e393433 100644
+--- a/core/SCsub
++++ b/core/SCsub
+@@ -154,6 +154,8 @@ if env["builtin_zstd"]:
+     thirdparty_zstd_sources = [thirdparty_zstd_dir + file for file in thirdparty_zstd_sources]
+ 
+     env_thirdparty.Prepend(CPPPATH=[thirdparty_zstd_dir, thirdparty_zstd_dir + "common"])
++    if env["arch"] != "x86_64":
++        env_thirdparty.Append(CPPDEFINES=["ZSTD_DISABLE_ASM"])
+     env_thirdparty.Append(CPPDEFINES=["ZSTD_STATIC_LINKING_ONLY"])
+     env.Prepend(CPPPATH=thirdparty_zstd_dir)
+     # Also needed in main env includes will trigger warnings
