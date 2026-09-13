@@ -521,18 +521,21 @@ def assemble_scons_args(
             # Disable zstd x86_64 asm for ARM64 cross-compilation
             cmd.append('cppdefines=ZSTD_DISABLE_ASM')
 
+        # Disable LTO to prevent GCC cross-compiler bytecode mismatches with precompiled static libraries
+        cmd.append("lto=none")
+
+        link_flags_list = ["-fno-lto"]
         if deps_dir:
             plat_key = f"linux_{arch}"
             deps_lib = deps_dir / plat_key / "lib"
             sub_cfg = "Debug" if dev or target == "template_debug" else "Release"
             cfg_lib = deps_lib / sub_cfg
-            link_dirs = []
             if cfg_lib.is_dir():
-                link_dirs.append(f"-L{cfg_lib.as_posix()}")
+                link_flags_list.append(f"-L{cfg_lib.as_posix()}")
             if deps_lib.is_dir():
-                link_dirs.append(f"-L{deps_lib.as_posix()}")
-            if link_dirs:
-                cmd.append(f'linkflags={" ".join(link_dirs)}')
+                link_flags_list.append(f"-L{deps_lib.as_posix()}")
+        if link_flags_list:
+            cmd.append(f'linkflags={" ".join(link_flags_list)}')
 
         if compiler_ver:
             norm_cver = compiler_ver if compiler_ver.startswith("-") else f"-{compiler_ver}"
