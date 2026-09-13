@@ -524,7 +524,7 @@ def assemble_scons_args(
         # Disable LTO to prevent GCC cross-compiler bytecode mismatches with precompiled static libraries
         cmd.append("lto=none")
 
-        link_flags_list = ["-fno-lto"]
+        link_flags_list = ["-fno-lto", "-Wl,--no-warn-rwx-segments"]
         if deps_dir:
             plat_key = f"linux_{arch}"
             deps_lib = deps_dir / plat_key / "lib"

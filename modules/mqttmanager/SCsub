@@ -211,11 +211,11 @@ elif module_env["platform"] in ["linuxbsd"]:
             ])
 
         env.Append(LIBS=[
-            "paho-mqtt3as",
             "paho-mqttpp3",
+            "paho-mqtt3as",
             "spdlog",
-            "crypto",
-            "ssl"
+            "ssl",
+            "crypto"
         ])
 
     elif module_env["target"] == "template_debug":
@@ -229,9 +229,9 @@ elif module_env["platform"] in ["linuxbsd"]:
             ])
 
         env.Append(LIBS=[
-            "paho-mqtt3as",
             "paho-mqttpp3",
+            "paho-mqtt3as",
             "spdlogd",
-            "crypto",
-            "ssl"
+            "ssl",
+            "crypto"
         ])

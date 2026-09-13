@@ -264,8 +264,8 @@ elif module_env["platform"] in ["linuxbsd"]:
 
         env.Append(LIBS=[
             "Open62541CppWrapper",
-            "pthread",
             "open62541",
+            "pthread",
             "mbedtls",
             "mbedx509",
             "mbedcrypto",
@@ -293,10 +293,14 @@ elif module_env["platform"] in ["linuxbsd"]:
                 os.path.join(deps_root, "spdlog/build" + _COMPILERVER + "/Debug/noexception")
             ])
 
+        wrapper_lib = "Open62541CppWrapperd"
+        if not os.path.isfile(os.path.join(deps_root, "lib", "Debug", "libOpen62541CppWrapperd.a")) and os.path.isfile(os.path.join(deps_root, "lib", "Debug", "libOpen62541CppWrapper.a")):
+            wrapper_lib = "Open62541CppWrapper"
+
         env.Append(LIBS=[
-            "Open62541CppWrapperd",
-            "pthread",
+            wrapper_lib,
             "open62541",
+            "pthread",
             "mbedtls",
             "mbedx509",
             "mbedcrypto",
