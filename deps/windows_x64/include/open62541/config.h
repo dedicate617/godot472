@@ -11,9 +11,9 @@
 #define UA_OPEN62541_VER_MAJOR 1
 #define UA_OPEN62541_VER_MINOR 3
 #define UA_OPEN62541_VER_PATCH 9
-#define UA_OPEN62541_VER_LABEL "-undefined" /* Release candidate label, etc. */
-#define UA_OPEN62541_VER_COMMIT "unknown-commit"
-#define UA_OPEN62541_VERSION "v1.3.9-undefined"
+#define UA_OPEN62541_VER_LABEL "-dirty" /* Release candidate label, etc. */
+#define UA_OPEN62541_VER_COMMIT "v1.3.9-dirty"
+#define UA_OPEN62541_VERSION "v1.3.9-dirty"
 
 /**
  * Feature Options
@@ -27,7 +27,7 @@
 #define UA_ENABLE_METHODCALLS
 #define UA_ENABLE_NODEMANAGEMENT
 #define UA_ENABLE_SUBSCRIPTIONS
-/* #undef UA_ENABLE_PUBSUB */
+#define UA_ENABLE_PUBSUB
 /* #undef UA_ENABLE_PUBSUB_ENCRYPTION */
 /* #undef UA_ENABLE_PUBSUB_FILE_CONFIG */
 /* #undef UA_ENABLE_PUBSUB_ETH_UADP */
@@ -40,11 +40,11 @@
 #define UA_ENABLE_PARSING
 /* #undef UA_ENABLE_EXPERIMENTAL_HISTORIZING */
 #define UA_ENABLE_SUBSCRIPTIONS_EVENTS
-/* #undef UA_ENABLE_JSON_ENCODING */
-/* #undef UA_ENABLE_PUBSUB_MQTT */
-/* #undef UA_ENABLE_MQTT_TLS */
+#define UA_ENABLE_JSON_ENCODING
+#define UA_ENABLE_PUBSUB_MQTT
+#define UA_ENABLE_MQTT_TLS
 /* #undef UA_ENABLE_MQTT_TLS_OPENSSL */
-/* #undef UA_ENABLE_MQTT_TLS_MBEDTLS */
+#define UA_ENABLE_MQTT_TLS_MBEDTLS
 #define UA_ENABLE_ENCRYPTION_MBEDTLS
 /* #undef UA_ENABLE_TPM2_SECURITY */
 /* #undef UA_ENABLE_ENCRYPTION_OPENSSL */
@@ -63,10 +63,10 @@
 #define UA_ENABLE_TYPEDESCRIPTION
 #define UA_ENABLE_NODESET_COMPILER_DESCRIPTIONS
 /* #undef UA_ENABLE_DETERMINISTIC_RNG */
-/* #undef UA_ENABLE_DISCOVERY */
+#define UA_ENABLE_DISCOVERY
 /* #undef UA_ENABLE_DISCOVERY_MULTICAST */
 /* #undef UA_ENABLE_WEBSOCKET_SERVER */
-/* #undef UA_ENABLE_QUERY */
+#define UA_ENABLE_QUERY
 /* #undef UA_ENABLE_MALLOC_SINGLETON */
 #define UA_ENABLE_DISCOVERY_SEMAPHORE
 /* #undef UA_ENABLE_UNIT_TEST_FAILURE_HOOKS */
@@ -80,7 +80,7 @@
 /* #undef UA_PACK_DEBIAN */
 
 /* Options for Debugging */
-/* #undef UA_DEBUG */
+#define UA_DEBUG
 /* #undef UA_DEBUG_DUMP_PKGS */
 /* #undef UA_DEBUG_FILE_LINE_INFO */
 /**
@@ -138,6 +138,6 @@
 // specific architectures can undef this
 #define UA_HAS_GETIFADDR
 
-#include "posix/ua_architecture.h"
+#include "win32/ua_architecture.h"
 
 #endif /* UA_CONFIG_H_ */

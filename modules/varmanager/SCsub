@@ -235,6 +235,10 @@ elif module_env["platform"] in ["linuxbsd"]:
 
     # Standard layout lib check
     if os.path.isdir(os.path.join(deps_root, "lib")):
+        is_dbg = (module_env.get("dev_build", False) == True or module_env.get("target") == "template_debug")
+        sub_cfg = "Debug" if is_dbg else "Release"
+        if os.path.isdir(os.path.join(deps_root, "lib", sub_cfg)):
+            env.Append(LIBPATH=[os.path.join(deps_root, "lib", sub_cfg)])
         env.Append(LIBPATH=[os.path.join(deps_root, "lib")])
 
     if module_env["target"] == "template_release" or module_env["target"] == "editor":
