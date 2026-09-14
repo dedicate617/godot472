@@ -524,7 +524,14 @@ def assemble_scons_args(
         # Disable LTO to prevent GCC cross-compiler bytecode mismatches with precompiled static libraries
         cmd.append("lto=none")
 
-        link_flags_list = ["-fno-lto", "-Wl,--no-warn-rwx-segments"]
+        link_flags_list = [
+            "-fno-lto",
+            "-Wl,--no-warn-rwx-segments",
+            "-Wl,--allow-multiple-definition",
+        ]
+        if arch == "arm32":
+            link_flags_list.append("-Wl,--defsym=SSL_get_peer_certificate=SSL_get0_peer_certificate")
+
         if deps_dir:
             plat_key = f"linux_{arch}"
             deps_lib = deps_dir / plat_key / "lib"
