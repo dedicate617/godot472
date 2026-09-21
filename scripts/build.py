@@ -313,6 +313,59 @@ def setup_arm_gcc_environment(arm_gcc_path: Optional[str] = None, dry_run: bool 
     return env_updates
 
 
+def setup_emsdk_environment(dry_run: bool = False, custom_emsdk: Optional[str] = None) -> bool:
+    """
+    Ensure Emscripten SDK build environment is active.
+    If not active (emcc not in PATH), locate emsdk_env.bat and inject variables into os.environ.
+    """
+    if shutil.which("emcc"):
+        log_info("Emscripten environment is already active.")
+        return True
+
+    repo_root = probe_repo_root()
+    candidates = [
+        custom_emsdk,
+        os.environ.get("EMSDK"),
+        safe_path(repo_root.parent / "emsdk"),
+        r"C:\emsdk",
+    ]
+
+    emsdk_bat = None
+    for cand in candidates:
+        if not cand:
+            continue
+        p = safe_path(cand)
+        bat = p / "emsdk_env.bat"
+        if bat.is_file():
+            emsdk_bat = str(bat)
+            break
+
+    if not emsdk_bat:
+        log_warn("Emscripten emsdk_env.bat not found. Compilation may fail if emcc is not in PATH.")
+        return False
+
+    log_info(f"Found Emscripten toolchain activator: {emsdk_bat}")
+    if dry_run:
+        log_dry_run(f"Would invoke: call \"{emsdk_bat}\" to inject Emscripten compiler environment")
+        return True
+
+    try:
+        log_info("Activating Emscripten SDK build environment...")
+        cmd = f'call "{emsdk_bat}" >nul 2>&1 && set'
+        proc = subprocess.run(cmd, shell=True, capture_output=True, text=True, errors="replace", check=True)
+        new_env: Dict[str, str] = {}
+        for line in proc.stdout.splitlines():
+            if "=" in line:
+                k, v = line.split("=", 1)
+                new_env[k] = v
+        os.environ.update(new_env)
+        log_success(f"Emscripten environment activated successfully (EMSDK: {os.environ.get('EMSDK', 'N/A')})")
+        return True
+    except Exception as e:
+        log_error(f"Failed to activate Emscripten environment via {emsdk_bat}: {e}")
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Target Matrix & Command Assembly
 # ---------------------------------------------------------------------------
@@ -780,6 +833,12 @@ Examples:
         help="Explicit path to vcvars64.bat (Windows MSVC only)",
     )
     parser.add_argument(
+        "--emsdk-path",
+        type=str,
+        default=os.environ.get("EMSDK"),
+        help="Explicit path to Emscripten SDK root (Web/WASM platform only)",
+    )
+    parser.add_argument(
         "--scons-bin",
         type=str,
         default="scons",
@@ -888,7 +947,7 @@ def run_build(args: argparse.Namespace) -> int:
     elif norm_plat == "linuxbsd" and args.arch in ("arm32", "arm64"):
         setup_arm_gcc_environment(arm_gcc_path=args.arm_gcc_path, dry_run=args.dry_run)
     elif norm_plat == "web":
-        pass
+        setup_emsdk_environment(dry_run=args.dry_run, custom_emsdk=args.emsdk_path)
 
     # In actual run mode, verify that godot_dir contains SConstruct
     if not args.dry_run:
