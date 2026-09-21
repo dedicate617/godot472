@@ -578,9 +578,16 @@ def assemble_scons_args(
             norm_cver = compiler_ver if compiler_ver.startswith("-") else f"-{compiler_ver}"
             cmd.append(f"COMPILERVER={norm_cver}")
     elif norm_plat == "web":
+        # Web/WASM platform: enable Pthreads (SharedArrayBuffer) and Emscripten WebSocket proxy
+        # threads=yes requires the browser to serve with COOP/COEP headers (use scratch/dev_server.py)
+        cmd.append("threads=yes")
+        # WebSocket proxy URL (configurable via WEBSOCKIFY_URL env, default localhost for dev)
+        websocket_url = os.environ.get("WEBSOCKIFY_URL", "ws://localhost:8080/")
+        cmd.append(f'linkflags=-s WEBSOCKET_URL={websocket_url} -s WEBSOCKIFY=1 -s USE_PTHREADS=1 -s PTHREAD_POOL_SIZE=4')
         if compiler_ver:
             norm_cver = compiler_ver if compiler_ver.startswith("-") else f"-{compiler_ver}"
             cmd.append(f"COMPILERVER={norm_cver}")
+
 
     # 9. VS solution generation option (if requested)
     if vsproj and norm_plat == "windows":
