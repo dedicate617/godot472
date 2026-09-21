@@ -17,6 +17,60 @@
 #elif defined(__linux__)
 	#include "MMKV.h"
 #endif
+#ifdef JAVASCRIPT_ENABLED
+
+KVManager::KVManager() {
+    load_from_disk();
+}
+
+void KVManager::set(const String &key, const Variant &val) {
+    memory_cache[key] = val;
+    is_dirty = true;
+}
+
+Variant KVManager::get(const String &key) {
+    if (memory_cache.has(key)) {
+        return memory_cache[key];
+    }
+    return Variant();
+}
+
+void KVManager::flush_to_disk() {
+    if (!is_dirty) return;
+    Ref<FileAccess> f = FileAccess::open(save_path, FileAccess::WRITE);
+    if (f.is_valid()) {
+        f->store_32(memory_cache.size());
+        for (const KeyValue<String, Variant> &E : memory_cache) {
+            f->store_pascal_string(E.key);
+            f->store_var(E.value);
+        }
+        f->close(); // Triggers Emscripten IDBFS sync
+        is_dirty = false;
+        last_flush_time = OS::get_singleton()->get_ticks_msec();
+    }
+}
+
+void KVManager::load_from_disk() {
+    Ref<FileAccess> f = FileAccess::open(save_path, FileAccess::READ);
+    if (f.is_valid()) {
+        uint32_t size = f->get_32();
+        for (uint32_t i = 0; i < size; i++) {
+            String k = f->get_pascal_string();
+            Variant v = f->get_var();
+            memory_cache[k] = v;
+        }
+        f->close();
+    }
+}
+
+void KVManager::process(float delta) {
+    if (is_dirty && OS::get_singleton()->get_ticks_msec() - last_flush_time > 500) {
+        flush_to_disk();
+    }
+}
+
+#else
+
 
 #define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING
 
@@ -1059,3 +1113,5 @@ String KVManager::getUtf8String(std::string in)
 
 	return "";
 }
+
+#endif

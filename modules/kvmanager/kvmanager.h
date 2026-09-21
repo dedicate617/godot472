@@ -35,6 +35,28 @@
 //#include "core/object/method_bind_ext.gen.inc"
 using namespace std;
 
+#ifdef JAVASCRIPT_ENABLED
+#include "core/io/file_access.h"
+#include "core/templates/hash_map.h"
+#include "core/os/os.h"
+#include "core/variant/variant.h"
+
+class KVManager {
+private:
+    HashMap<String, Variant> memory_cache;
+    bool is_dirty = false;
+    uint64_t last_flush_time = 0;
+    String save_path = "user://mindscada_kv.bin";
+
+    void flush_to_disk();
+    void load_from_disk();
+public:
+    KVManager();
+    void set(const String &key, const Variant &val);
+    Variant get(const String &key);
+    void process(float delta); // To be called from Godot _process or timer
+};
+#else
 class MMKV;
 class KVManager : public KVTransferInterface /*, ICallback*/ {
 	GDCLASS(KVManager, KVTransferInterface);
@@ -180,5 +202,7 @@ private:
 VARIANT_ENUM_CAST(KVManager::KVLogLevel);
 VARIANT_ENUM_CAST(KVManager::KVMode);
 VARIANT_ENUM_CAST(KVManager::KVSyncFlag);
+
+#endif
 
 #endif // VARMANGER_H

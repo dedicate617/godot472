@@ -80,7 +80,9 @@ def resolve_deps_root(env, default_fallback):
     return default_fallback
 
 
-if module_env["platform"] in ["windows"]:
+if module_env["platform"] in ["web", "javascript"]:
+    print("[kvmanager] Web platform detected, skipping MMKV dependencies.")
+elif module_env["platform"] in ["windows"]:
     deps_root = resolve_deps_root(module_env, "C:/opensource")
 
     # Standard layout include check
