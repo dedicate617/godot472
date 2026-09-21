@@ -1,5 +1,9 @@
 #!/usr/bin/env python
 Import("env")
+
+if env["platform"] == "web":
+    Return()
+
 Import("env_modules")
 
 env_qtwindow = env_modules.Clone()

@@ -349,6 +349,17 @@ def get_build_plan(target: str, dev: bool, build_all: bool) -> List[Dict[str, An
     ]
 
 
+def get_custom_modules(platform_name: str) -> List[str]:
+    """
+    Return list of custom module names supported for the given target platform.
+    Native UI modules ('qtwindow', 'webview') are stripped out for Web target.
+    """
+    modules = ["kvmanager", "mqttmanager", "varmanager"]
+    if platform_name != "web":
+        modules.extend(["qtwindow", "webview"])
+    return modules
+
+
 def probe_custom_module_deps(
     deps_dir: Path,
     platform_name: str,
@@ -365,7 +376,11 @@ def probe_custom_module_deps(
     Returns a dict of module_name -> bool indicating availability.
     Modules 'webview' and 'qtwindow' always return True (they have built-in
     dummy/system fallbacks in their SCsub).
+    For 'web' target, UI modules are excluded and remaining modules have web fallbacks.
     """
+    if platform_name == "web":
+        return {m: True for m in get_custom_modules(platform_name)}
+
     # Normalize platform/arch keys the same way SCsub does
     norm_plat = "linux" if platform_name in ("linux", "linuxbsd") else platform_name
     if "arm64" in arch or "aarch64" in arch:
@@ -455,7 +470,12 @@ def assemble_scons_args(
     cmd = [scons_bin]
 
     # 1. Platform normalization
-    norm_plat = "linuxbsd" if platform_name in ("linux", "linuxbsd") else "windows"
+    if platform_name == "web":
+        norm_plat = "web"
+    elif platform_name in ("linux", "linuxbsd"):
+        norm_plat = "linuxbsd"
+    else:
+        norm_plat = "windows"
     cmd.append(f"platform={norm_plat}")
 
     # 2. Architecture
@@ -479,13 +499,15 @@ def assemble_scons_args(
     # 6. Core module enablement flags — auto-detect dependency availability
     cmd.append("module_mono_enabled=no")
 
+    custom_modules = get_custom_modules(platform_name)
+
     if deps_dir:
         module_avail = probe_custom_module_deps(deps_dir, platform_name, arch)
     else:
         # If no deps_dir provided, assume all modules are available (backward compat)
-        module_avail = {m: True for m in ["kvmanager", "varmanager", "mqttmanager", "webview", "qtwindow"]}
+        module_avail = {m: True for m in custom_modules}
 
-    for mod_name in ["kvmanager", "varmanager", "mqttmanager", "webview", "qtwindow"]:
+    for mod_name in custom_modules:
         enabled = module_avail.get(mod_name, True)
         flag_val = "yes" if enabled else "no"
         cmd.append(f"module_{mod_name}_enabled={flag_val}")
@@ -498,7 +520,7 @@ def assemble_scons_args(
     cmd.append("MMKVVER=-1.3.3")
     cmd.append("MQTTVER=v1.4.1")
 
-    # 8. Linux platform specific options
+    # 8. Platform specific options
     if norm_plat == "linuxbsd":
         cmd.append("use_llvm=no")
         if arch == "arm32":
@@ -547,11 +569,15 @@ def assemble_scons_args(
         if compiler_ver:
             norm_cver = compiler_ver if compiler_ver.startswith("-") else f"-{compiler_ver}"
             cmd.append(f"COMPILERVER={norm_cver}")
-    else:
+    elif norm_plat == "windows":
         # Windows platform options: disable external optional drivers if Agility SDK / AccessKit not configured
         cmd.append("d3d12=no")
         cmd.append("accesskit=no")
         cmd.append("linkflags=/FORCE:MULTIPLE")
+        if compiler_ver:
+            norm_cver = compiler_ver if compiler_ver.startswith("-") else f"-{compiler_ver}"
+            cmd.append(f"COMPILERVER={norm_cver}")
+    elif norm_plat == "web":
         if compiler_ver:
             norm_cver = compiler_ver if compiler_ver.startswith("-") else f"-{compiler_ver}"
             cmd.append(f"COMPILERVER={norm_cver}")
@@ -639,13 +665,13 @@ Examples:
     # Platform & Target Options
     parser.add_argument(
         "--platform",
-        choices=["windows", "linux", "linuxbsd"],
+        choices=["windows", "linux", "linuxbsd", "web"],
         default=host_plat,
         help=f"Target platform (default: auto-detected host platform '{host_plat}')",
     )
     parser.add_argument(
         "--arch",
-        choices=["x86_64", "arm32", "arm64", "x86_32"],
+        choices=["x86_64", "arm32", "arm64", "x86_32", "wasm32"],
         default=host_arch,
         help=f"Target CPU architecture (default: auto-detected host arch '{host_arch}')",
     )
@@ -785,6 +811,9 @@ Examples:
 
 def run_build(args: argparse.Namespace) -> int:
     """Execute or simulate build driver process."""
+    if args.platform == "web" and args.arch == detect_host_arch():
+        args.arch = "wasm32"
+
     repo_root = probe_repo_root()
     godot_dir = probe_godot_dir(repo_root, args.godot_dir)
     modules_dir = safe_path(args.modules_dir) if args.modules_dir else safe_path(repo_root / "modules")
@@ -840,12 +869,19 @@ def run_build(args: argparse.Namespace) -> int:
     log_info(f"Exported Environment Variable: MINDSCADA_DEPS_ROOT = {deps_root_str}")
 
     # Toolchain initialization
-    norm_plat = "linuxbsd" if args.platform in ("linux", "linuxbsd") else "windows"
+    if args.platform == "web":
+        norm_plat = "web"
+    elif args.platform in ("linux", "linuxbsd"):
+        norm_plat = "linuxbsd"
+    else:
+        norm_plat = "windows"
 
     if norm_plat == "windows":
         setup_msvc_environment(dry_run=args.dry_run, custom_vcvars=args.vcvars_path)
     elif norm_plat == "linuxbsd" and args.arch in ("arm32", "arm64"):
         setup_arm_gcc_environment(arm_gcc_path=args.arm_gcc_path, dry_run=args.dry_run)
+    elif norm_plat == "web":
+        pass
 
     # In actual run mode, verify that godot_dir contains SConstruct
     if not args.dry_run:

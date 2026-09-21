@@ -2,6 +2,10 @@
 import os
 
 Import("env")
+
+if env["platform"] == "web":
+    Return()
+
 Import("env_modules")
 
 env_native_webview = env_modules.Clone()
