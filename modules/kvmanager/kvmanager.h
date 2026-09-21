@@ -35,26 +35,62 @@
 //#include "core/object/method_bind_ext.gen.inc"
 using namespace std;
 
-#ifdef JAVASCRIPT_ENABLED
+#if defined(WEB_ENABLED) || defined(JAVASCRIPT_ENABLED)
 #include "core/io/file_access.h"
 #include "core/templates/hash_map.h"
 #include "core/os/os.h"
 #include "core/variant/variant.h"
 
-class KVManager {
-private:
-    HashMap<String, Variant> memory_cache;
-    bool is_dirty = false;
-    uint64_t last_flush_time = 0;
-    String save_path = "user://mindscada_kv.bin";
+class KVManager : public KVTransferInterface {
+	GDCLASS(KVManager, KVTransferInterface);
 
-    void flush_to_disk();
-    void load_from_disk();
+protected:
+	static void _bind_methods();
+
+private:
+	static KVManager *singleton;
+	HashMap<String, Variant> memory_cache;
+	bool is_dirty = false;
+	uint64_t last_flush_time = 0;
+	String save_path = "user://mindscada_kv.bin";
+
+	void flush_to_disk();
+	void load_from_disk();
+
 public:
-    KVManager();
-    void set(const String &key, const Variant &val);
-    Variant get(const String &key);
-    void process(float delta); // To be called from Godot _process or timer
+	KVManager();
+	virtual ~KVManager();
+
+	static KVManager *get_singleton();
+	virtual void init(const String &p_rootDir = "") override;
+	void finish();
+
+	// Core cache API
+	void set(const String &key, const Variant &val);
+	Variant get(const String &key);
+	void process(float delta);
+
+	// MMKV-compatible API wrappers
+	bool setValue(const String &p_key, const Variant p_value, const String &p_id = "DEFAULT");
+	bool getBool(const String &p_key, const String &p_id = "DEFAULT");
+	int getInt32(const String &p_key, const String &p_id = "DEFAULT");
+	int getUInt32(const String &p_key, const String &p_id = "DEFAULT");
+	int getInt64(const String &p_key, const String &p_id = "DEFAULT");
+	int getUInt64(const String &p_key, const String &p_id = "DEFAULT");
+	double getReal(const String &p_key, const String &p_id = "DEFAULT");
+	String getString(const String &p_key, const String &p_id = "DEFAULT");
+	Vector<String> getArray(const String &p_key, const String &p_id = "DEFAULT");
+	Dictionary getDict(const String &p_key, const String &p_id = "DEFAULT");
+	bool containsKey(const String &p_key, const String &p_id = "DEFAULT");
+	int count(const String &p_id = "DEFAULT");
+	Vector<String> allKeys(const String &p_id = "DEFAULT");
+	void removeValueForKey(const String &p_key, const String &p_id = "DEFAULT");
+	void clearAll(const String &p_id = "DEFAULT");
+
+	// Stub methods for interface compatibility
+	void kvWithID(int p_mode = 0, const String &p_id = "DEFAULT", const String &p_cryptKey = "", const String &p_rootPath = "") {}
+	virtual void kvWithID1(int p_mode = 1, const String &p_id = "DEFAULT", const String &p_cryptKey = "", const String &p_rootPath = "") override {}
+	virtual void onVarRefreshed(const String &topic, const String &msg, const int qos) override {}
 };
 #else
 class MMKV;

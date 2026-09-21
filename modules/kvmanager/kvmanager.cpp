@@ -17,56 +17,169 @@
 #elif defined(__linux__)
 	#include "MMKV.h"
 #endif
-#ifdef JAVASCRIPT_ENABLED
+#if defined(WEB_ENABLED) || defined(JAVASCRIPT_ENABLED)
+
+KVManager *KVManager::singleton = nullptr;
+
+KVManager *KVManager::get_singleton() {
+	return singleton;
+}
 
 KVManager::KVManager() {
-    load_from_disk();
+	singleton = this;
+	load_from_disk();
+}
+
+KVManager::~KVManager() {
+	flush_to_disk();
+	singleton = nullptr;
+}
+
+void KVManager::init(const String &p_rootDir) {
+	// No-op for web: data is persisted via FileAccess/IDBFS
+}
+
+void KVManager::finish() {
+	flush_to_disk();
+}
+
+void KVManager::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("setValue", "key", "value", "id"), &KVManager::setValue, DEFVAL("DEFAULT"));
+	ClassDB::bind_method(D_METHOD("getString", "key", "id"), &KVManager::getString, DEFVAL("DEFAULT"));
+	ClassDB::bind_method(D_METHOD("getBool", "key", "id"), &KVManager::getBool, DEFVAL("DEFAULT"));
+	ClassDB::bind_method(D_METHOD("getInt32", "key", "id"), &KVManager::getInt32, DEFVAL("DEFAULT"));
+	ClassDB::bind_method(D_METHOD("getReal", "key", "id"), &KVManager::getReal, DEFVAL("DEFAULT"));
+	ClassDB::bind_method(D_METHOD("containsKey", "key", "id"), &KVManager::containsKey, DEFVAL("DEFAULT"));
+	ClassDB::bind_method(D_METHOD("removeValueForKey", "key", "id"), &KVManager::removeValueForKey, DEFVAL("DEFAULT"));
+	ClassDB::bind_method(D_METHOD("clearAll", "id"), &KVManager::clearAll, DEFVAL("DEFAULT"));
+	ClassDB::bind_method(D_METHOD("allKeys", "id"), &KVManager::allKeys, DEFVAL("DEFAULT"));
+	ClassDB::bind_method(D_METHOD("count", "id"), &KVManager::count, DEFVAL("DEFAULT"));
 }
 
 void KVManager::set(const String &key, const Variant &val) {
-    memory_cache[key] = val;
-    is_dirty = true;
+	memory_cache[key] = val;
+	is_dirty = true;
 }
 
 Variant KVManager::get(const String &key) {
-    if (memory_cache.has(key)) {
-        return memory_cache[key];
-    }
-    return Variant();
+	if (memory_cache.has(key)) {
+		return memory_cache[key];
+	}
+	return Variant();
+}
+
+bool KVManager::setValue(const String &p_key, const Variant p_value, const String &p_id) {
+	set(p_key, p_value);
+	return true;
+}
+
+bool KVManager::getBool(const String &p_key, const String &p_id) {
+	return (bool)get(p_key);
+}
+
+int KVManager::getInt32(const String &p_key, const String &p_id) {
+	return (int)get(p_key);
+}
+
+int KVManager::getUInt32(const String &p_key, const String &p_id) {
+	return (int)(uint32_t)(int)get(p_key);
+}
+
+int KVManager::getInt64(const String &p_key, const String &p_id) {
+	return (int64_t)(int)get(p_key);
+}
+
+int KVManager::getUInt64(const String &p_key, const String &p_id) {
+	return (int64_t)(uint64_t)(int)get(p_key);
+}
+
+double KVManager::getReal(const String &p_key, const String &p_id) {
+	return (double)get(p_key);
+}
+
+String KVManager::getString(const String &p_key, const String &p_id) {
+	return (String)get(p_key);
+}
+
+Vector<String> KVManager::getArray(const String &p_key, const String &p_id) {
+	Variant v = get(p_key);
+	if (v.get_type() == Variant::ARRAY) {
+		Array arr = v;
+		Vector<String> result;
+		for (int i = 0; i < arr.size(); i++) {
+			result.push_back(arr[i]);
+		}
+		return result;
+	}
+	return Vector<String>();
+}
+
+Dictionary KVManager::getDict(const String &p_key, const String &p_id) {
+	Variant v = get(p_key);
+	if (v.get_type() == Variant::DICTIONARY) {
+		return v;
+	}
+	return Dictionary();
+}
+
+bool KVManager::containsKey(const String &p_key, const String &p_id) {
+	return memory_cache.has(p_key);
+}
+
+int KVManager::count(const String &p_id) {
+	return memory_cache.size();
+}
+
+Vector<String> KVManager::allKeys(const String &p_id) {
+	Vector<String> keys;
+	for (const KeyValue<String, Variant> &E : memory_cache) {
+		keys.push_back(E.key);
+	}
+	return keys;
+}
+
+void KVManager::removeValueForKey(const String &p_key, const String &p_id) {
+	memory_cache.erase(p_key);
+	is_dirty = true;
+}
+
+void KVManager::clearAll(const String &p_id) {
+	memory_cache.clear();
+	is_dirty = true;
 }
 
 void KVManager::flush_to_disk() {
-    if (!is_dirty) return;
-    Ref<FileAccess> f = FileAccess::open(save_path, FileAccess::WRITE);
-    if (f.is_valid()) {
-        f->store_32(memory_cache.size());
-        for (const KeyValue<String, Variant> &E : memory_cache) {
-            f->store_pascal_string(E.key);
-            f->store_var(E.value);
-        }
-        f->close(); // Triggers Emscripten IDBFS sync
-        is_dirty = false;
-        last_flush_time = OS::get_singleton()->get_ticks_msec();
-    }
+	if (!is_dirty) return;
+	Ref<FileAccess> f = FileAccess::open(save_path, FileAccess::WRITE);
+	if (f.is_valid()) {
+		f->store_32(memory_cache.size());
+		for (const KeyValue<String, Variant> &E : memory_cache) {
+			f->store_pascal_string(E.key);
+			f->store_var(E.value);
+		}
+		f->close(); // Triggers Emscripten IDBFS sync
+		is_dirty = false;
+		last_flush_time = OS::get_singleton()->get_ticks_msec();
+	}
 }
 
 void KVManager::load_from_disk() {
-    Ref<FileAccess> f = FileAccess::open(save_path, FileAccess::READ);
-    if (f.is_valid()) {
-        uint32_t size = f->get_32();
-        for (uint32_t i = 0; i < size; i++) {
-            String k = f->get_pascal_string();
-            Variant v = f->get_var();
-            memory_cache[k] = v;
-        }
-        f->close();
-    }
+	Ref<FileAccess> f = FileAccess::open(save_path, FileAccess::READ);
+	if (f.is_valid()) {
+		uint32_t size = f->get_32();
+		for (uint32_t i = 0; i < size; i++) {
+			String k = f->get_pascal_string();
+			Variant v = f->get_var();
+			memory_cache[k] = v;
+		}
+		f->close();
+	}
 }
 
 void KVManager::process(float delta) {
-    if (is_dirty && OS::get_singleton()->get_ticks_msec() - last_flush_time > 500) {
-        flush_to_disk();
-    }
+	if (is_dirty && OS::get_singleton()->get_ticks_msec() - last_flush_time > 500) {
+		flush_to_disk();
+	}
 }
 
 #else
