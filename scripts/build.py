@@ -631,9 +631,10 @@ def assemble_scons_args(
             norm_cver = compiler_ver if compiler_ver.startswith("-") else f"-{compiler_ver}"
             cmd.append(f"COMPILERVER={norm_cver}")
     elif norm_plat == "web":
-        # Web/WASM platform: enable Pthreads (SharedArrayBuffer)
+        # Web/WASM platform: enable Pthreads (SharedArrayBuffer) and MindSCADA asset naming
         # threads=yes requires the browser to serve with COOP/COEP headers (use scratch/dev_server.py)
         cmd.append("threads=yes")
+        cmd.append("prog_name=mindscada")
         # Optional WebSocket proxy URL (configurable via WEBSOCKIFY_URL env, e.g. ws://localhost:8080/)
         websocket_url = os.environ.get("WEBSOCKIFY_URL")
         if websocket_url:
