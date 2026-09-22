@@ -1,0 +1,151 @@
+diff --git a/platform/web/SCsub b/platform/web/SCsub
+index c5c0680..f4970c0 100644
+--- a/platform/web/SCsub
++++ b/platform/web/SCsub
+@@ -74,8 +74,10 @@ if len(env["EXPORTED_FUNCTIONS"]):
+ if len(env["EXPORTED_RUNTIME_METHODS"]):
+     sys_env.Append(LINKFLAGS=["-sEXPORTED_RUNTIME_METHODS=" + repr(sorted(list(set(env["EXPORTED_RUNTIME_METHODS"]))))])
+ 
++prog_name = env.get("prog_name", "mindscada")
++
+ build = []
+-build_targets = ["#bin/godot${PROGSUFFIX}.js", "#bin/godot${PROGSUFFIX}.wasm"]
++build_targets = [f"#bin/{prog_name}${{PROGSUFFIX}}.js", f"#bin/{prog_name}${{PROGSUFFIX}}.wasm"]
+ if env["dlink_enabled"]:
+     # Reset libraries. The main runtime will only link emscripten libraries, not godot ones.
+     sys_env["LIBS"] = []
+@@ -95,7 +97,7 @@ if env["dlink_enabled"]:
+     sys = sys_env.add_program(build_targets, ["web_runtime.cpp"])
+ 
+     # The side library, containing all Godot code.
+-    wasm = env.add_program("#bin/godot.side${PROGSUFFIX}.wasm", web_files)
++    wasm = env.add_program(f"#bin/{prog_name}.side${{PROGSUFFIX}}.wasm", web_files)
+     build = sys + [wasm[0]]
+ else:
+     # We use IDBFS. Since Emscripten 1.39.1 it needs to be linked explicitly.
+@@ -114,7 +116,7 @@ engine = [
+     "js/engine/engine.js",
+ ]
+ externs = [env.File("#platform/web/js/engine/engine.externs.js")]
+-js_engine = env.CreateEngineFile("#bin/godot${PROGSUFFIX}.engine.js", engine, externs, env["threads"])
++js_engine = env.CreateEngineFile(f"#bin/{prog_name}${{PROGSUFFIX}}.engine.js", engine, externs, env["threads"])
+ env.Depends(js_engine, externs)
+ 
+ wrap_list = [
+@@ -122,7 +124,7 @@ wrap_list = [
+     js_engine,
+ ]
+ js_wrapped = env.NoCache(
+-    env.Textfile("#bin/godot", [env.File(f) for f in wrap_list], TEXTFILESUFFIX="${PROGSUFFIX}.wrapped.js")
++    env.Textfile(f"#bin/{prog_name}", [env.File(f) for f in wrap_list], TEXTFILESUFFIX="${PROGSUFFIX}.wrapped.js")
+ )
+ 
+ # 0 - unwrapped js file (use wrapped one instead)
+diff --git a/platform/web/detect.py b/platform/web/detect.py
+index 57b79b2..a01fd54 100644
+--- a/platform/web/detect.py
++++ b/platform/web/detect.py
+@@ -62,6 +62,7 @@ def get_opts():
+             False,
+         ),
+         BoolVariable("wasm_simd", "Use WebAssembly SIMD to improve CPU performance", True),
++        ("prog_name", "Base name for the output program binary", "mindscada"),
+     ]
+ 
+ 
+diff --git a/platform/web/emscripten_helpers.py b/platform/web/emscripten_helpers.py
+index 612e3e8..1ecdbc8 100644
+--- a/platform/web/emscripten_helpers.py
++++ b/platform/web/emscripten_helpers.py
+@@ -31,7 +31,8 @@ def create_engine_file(env, target, source, externs, threads_enabled):
+ 
+ 
+ def create_template_zip(env, js, wasm, side):
+-    binary_name = "godot.editor" if env.editor_build else "godot"
++    prog_name = env.get("prog_name", "mindscada")
++    binary_name = f"{prog_name}.editor" if env.editor_build else prog_name
+     zip_dir = env.Dir(env.GetTemplateZipPath())
+     in_files = [
+         js,
+@@ -55,27 +56,27 @@ def create_template_zip(env, js, wasm, side):
+         # HTML
+         html = "#misc/dist/html/editor.html"
+         cache = [
+-            "godot.editor.html",
++            f"{binary_name}.html",
+             "offline.html",
+-            "godot.editor.js",
+-            "godot.editor.audio.worklet.js",
+-            "godot.editor.audio.position.worklet.js",
++            f"{binary_name}.js",
++            f"{binary_name}.audio.worklet.js",
++            f"{binary_name}.audio.position.worklet.js",
+             "logo.svg",
+             "favicon.png",
+             "inter-regular.woff2",
+             "inter-bold.woff2",
+         ]
+-        opt_cache = ["godot.editor.wasm"]
++        opt_cache = [f"{binary_name}.wasm"]
+         subst_dict = {
+             "___GODOT_VERSION___": get_build_version(False),
+-            "___GODOT_NAME___": "GodotEngine",
++            "___GODOT_NAME___": "MindStudio",
+             "___GODOT_CACHE___": json.dumps(cache),
+             "___GODOT_OPT_CACHE___": json.dumps(opt_cache),
+             "___GODOT_OFFLINE_PAGE___": "offline.html",
+             "___GODOT_THREADS_ENABLED___": "true" if env["threads"] else "false",
+             "___GODOT_ENSURE_CROSSORIGIN_ISOLATION_HEADERS___": "true",
+         }
+-        html = env.Substfile(target="#bin/godot${PROGSUFFIX}.html", source=html, SUBST_DICT=subst_dict)
++        html = env.Substfile(target=f"#bin/{prog_name}${{PROGSUFFIX}}.html", source=html, SUBST_DICT=subst_dict)
+         in_files.append(html)
+         out_files.append(zip_dir.File(binary_name + ".html"))
+         # And logo/favicon
+@@ -85,7 +86,7 @@ def create_template_zip(env, js, wasm, side):
+         out_files.append(zip_dir.File("favicon.png"))
+         # PWA
+         service_worker = env.Substfile(
+-            target="#bin/godot${PROGSUFFIX}.service.worker.js",
++            target=f"#bin/{prog_name}${{PROGSUFFIX}}.service.worker.js",
+             source=service_worker,
+             SUBST_DICT=subst_dict,
+         )
+@@ -106,12 +107,12 @@ def create_template_zip(env, js, wasm, side):
+         in_files.append(service_worker)
+         out_files.append(zip_dir.File(binary_name + ".service.worker.js"))
+         in_files.append("#misc/dist/html/offline-export.html")
+-        out_files.append(zip_dir.File("godot.offline.html"))
++        out_files.append(zip_dir.File(binary_name + ".offline.html"))
+ 
+     zip_files = env.NoCache(env.InstallAs(out_files, in_files))
+     env.NoCache(
+         env.Zip(
+-            "#bin/godot",
++            f"#bin/{prog_name}",
+             zip_files,
+             ZIPROOT=zip_dir,
+             ZIPSUFFIX="${PROGSUFFIX}${ZIPSUFFIX}",
+diff --git a/platform/web/export/export_plugin.cpp b/platform/web/export/export_plugin.cpp
+index aded595..f45c8ca 100644
+--- a/platform/web/export/export_plugin.cpp
++++ b/platform/web/export/export_plugin.cpp
+@@ -78,7 +78,7 @@ Error EditorExportPlatformWeb::_extract_template(const String &p_template, const
+ 		}
+ 
+ 		// Skip service worker and offline page if not exporting pwa.
+-		if (!pwa && (file == "godot.service.worker.js" || file == "godot.offline.html")) {
++		if (!pwa && (file == "godot.service.worker.js" || file == "godot.offline.html" || file == "mindscada.service.worker.js" || file == "mindscada.offline.html")) {
+ 			continue;
+ 		}
+ 		Vector<uint8_t> data;
+@@ -90,7 +90,8 @@ Error EditorExportPlatformWeb::_extract_template(const String &p_template, const
+ 		unzCloseCurrentFile(pkg);
+ 
+ 		//write
+-		String dst = p_dir.path_join(file.replace("godot", p_name));
++		String prefix = file.begins_with("mindscada") ? "mindscada" : "godot";
++		String dst = p_dir.path_join(file.replace(prefix, p_name));
+ 		Ref<FileAccess> f = FileAccess::open(dst, FileAccess::WRITE);
+ 		if (f.is_null()) {
+ 			add_message(EXPORT_MESSAGE_ERROR, TTR("Prepare Templates"), vformat(TTR("Could not write file: \"%s\"."), dst));
