@@ -665,6 +665,7 @@ def collect_web_templates(
 
     # 1. Debug template archive
     debug_candidates = [
+        "mindscada.web.template_debug.wasm32.zip",
         "godot.web.template_debug.wasm32.zip",
         "web_debug.zip",
         "godot.web.template_debug.zip",
@@ -680,10 +681,11 @@ def collect_web_templates(
             )
         )
     else:
-        plan.missing_required.append("web_debug.zip (godot.web.template_debug.wasm32.zip)")
+        plan.missing_required.append("web_debug.zip (mindscada.web.template_debug.wasm32.zip)")
 
     # 2. Release template archive
     release_candidates = [
+        "mindscada.web.template_release.wasm32.zip",
         "godot.web.template_release.wasm32.zip",
         "web_release.zip",
         "godot.web.template_release.zip",
