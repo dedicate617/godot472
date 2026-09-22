@@ -376,20 +376,37 @@ def setup_emsdk_environment(dry_run: bool = False, custom_emsdk: Optional[str] =
 # Target Matrix & Command Assembly
 # ---------------------------------------------------------------------------
 
-def get_build_plan(target: str, dev: bool, build_all: bool) -> List[Dict[str, Any]]:
+def get_build_plan(target: str, dev: bool, build_all: bool, platform_name: str = "") -> List[Dict[str, Any]]:
     """
     Determine the list of build targets to execute.
-    If build_all or target == 'all', returns all 4 core targets:
-      1. editor dev
-      2. editor release
-      3. template_debug
-      4. template_release
-    If target == 'dist', returns the 3 distribution targets:
-      1. editor release
-      2. template_debug
-      3. template_release
+    If platform_name == 'web':
+      - 'dist': returns template_debug and template_release
+      - 'all' or build_all: returns template_debug (dev), template_debug, template_release
+    For desktop/embedded platforms (windows, linux):
+      If build_all or target == 'all', returns all 4 core targets:
+        1. editor dev
+        2. editor release
+        3. template_debug
+        4. template_release
+      If target == 'dist', returns the 3 distribution targets:
+        1. editor release
+        2. template_debug
+        3. template_release
     Otherwise returns single specified target.
     """
+    if platform_name == "web":
+        if build_all or target == "all":
+            return [
+                {"target": "template_debug", "dev": True, "name": "template_debug dev"},
+                {"target": "template_debug", "dev": False, "name": "template_debug"},
+                {"target": "template_release", "dev": False, "name": "template_release"},
+            ]
+        if target == "dist":
+            return [
+                {"target": "template_debug", "dev": False, "name": "template_debug"},
+                {"target": "template_release", "dev": False, "name": "template_release"},
+            ]
+
     if build_all or target == "all":
         return [
             {"target": "editor", "dev": True, "name": "editor dev"},
@@ -904,7 +921,7 @@ def run_build(args: argparse.Namespace) -> int:
 
     # Resolve build target plan
     target_arg = "dist" if args.dist else args.target
-    plan = get_build_plan(target_arg, args.dev, args.build_all)
+    plan = get_build_plan(target_arg, args.dev, args.build_all, platform_name=args.platform)
 
     # SCons Cache Configuration
     cache_path: Optional[Path] = None
