@@ -651,6 +651,81 @@ def collect_pi64_templates(
     return plan
 
 
+def collect_web_templates(
+    bin_dir: Path,
+    version: str,
+) -> PackagePlan:
+    """Collect artifacts for MindSCADA Web (WASM32) Export Templates package."""
+    archive_name = f"MindSCADA_v{version}_export_templates_web.tpz"
+    plan = PackagePlan(
+        name="Web (WASM32) Export Templates",
+        platform_key="web",
+        archive_filename=archive_name,
+    )
+
+    # 1. Debug template archive
+    debug_candidates = [
+        "godot.web.template_debug.wasm32.zip",
+        "web_debug.zip",
+        "godot.web.template_debug.zip",
+    ]
+    debug_zip = find_first_existing(bin_dir, debug_candidates)
+    if debug_zip:
+        plan.items.append(
+            ArchiveItem(
+                arcname="templates/web_debug.zip",
+                source_file=debug_zip,
+                is_executable=False,
+                description=f"Web Debug Export Template ({debug_zip.name})",
+            )
+        )
+    else:
+        plan.missing_required.append("web_debug.zip (godot.web.template_debug.wasm32.zip)")
+
+    # 2. Release template archive
+    release_candidates = [
+        "godot.web.template_release.wasm32.zip",
+        "web_release.zip",
+        "godot.web.template_release.zip",
+    ]
+    release_zip = find_first_existing(bin_dir, release_candidates)
+    if release_zip:
+        plan.items.append(
+            ArchiveItem(
+                arcname="templates/web_release.zip",
+                source_file=release_zip,
+                is_executable=False,
+                description=f"Web Release Export Template ({release_zip.name})",
+            )
+        )
+    else:
+        # Fallback to debug template if release is not yet built
+        if debug_zip:
+            plan.items.append(
+                ArchiveItem(
+                    arcname="templates/web_release.zip",
+                    source_file=debug_zip,
+                    is_executable=False,
+                    description=f"Web Release Export Template Fallback ({debug_zip.name})",
+                )
+            )
+        else:
+            plan.missing_required.append("web_release.zip (godot.web.template_release.wasm32.zip)")
+
+    # 3. version.txt
+    version_txt_content = f"{version}.stable\n"
+    plan.items.append(
+        ArchiveItem(
+            arcname="templates/version.txt",
+            content_bytes=version_txt_content.encode("utf-8"),
+            is_executable=False,
+            description=f"Godot Export Template Version Tag ({version}.stable)",
+        )
+    )
+
+    return plan
+
+
 # ---------------------------------------------------------------------------
 # Archive Builder & Checksum Manifest Generator
 # ---------------------------------------------------------------------------
@@ -830,9 +905,9 @@ Examples:
     )
     parser.add_argument(
         "--platform",
-        choices=["all", "windows", "pi32", "pi64"],
+        choices=["all", "windows", "pi32", "pi64", "web"],
         default="all",
-        help="Target packaging scope: 'all', 'windows', 'pi32', or 'pi64' (default: 'all')",
+        help="Target packaging scope: 'all', 'windows', 'pi32', 'pi64', or 'web' (default: 'all')",
     )
     parser.add_argument(
         "--dry-run",
@@ -882,6 +957,8 @@ def run_packaging(args: argparse.Namespace) -> int:
         plans.append(collect_pi32_templates(bin_dir, version))
     if selected_platform in ("all", "pi64"):
         plans.append(collect_pi64_templates(bin_dir, version))
+    if selected_platform in ("all", "web"):
+        plans.append(collect_web_templates(bin_dir, version))
 
     # Evaluate viability of plans
     viable_plans: List[PackagePlan] = []
