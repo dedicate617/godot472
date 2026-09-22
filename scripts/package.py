@@ -728,6 +728,38 @@ def collect_web_templates(
     return plan
 
 
+def collect_web_bundle(
+    bin_dir: Path,
+    version: str,
+) -> PackagePlan:
+    """Collect standalone Web application assets (.web_zip) into ready-to-deploy archive."""
+    archive_name = f"MindSCADA_v{version}_Web_bundle.zip"
+    plan = PackagePlan(
+        name="Web Standalone Bundle",
+        platform_key="web",
+        archive_filename=archive_name,
+    )
+    web_zip_dir = bin_dir / ".web_zip"
+    if not web_zip_dir.is_dir():
+        plan.missing_optional.append(".web_zip directory")
+        return plan
+
+    has_mindscada = any(f.name.startswith("mindscada.") for f in web_zip_dir.iterdir() if f.is_file())
+    prefix_filter = "mindscada." if has_mindscada else "godot."
+
+    for f in sorted(web_zip_dir.iterdir()):
+        if f.is_file() and f.name.startswith(prefix_filter):
+            plan.items.append(
+                ArchiveItem(
+                    arcname=f.name,
+                    source_file=f,
+                    is_executable=False,
+                    description=f"Web Bundle Asset ({f.name})",
+                )
+            )
+    return plan
+
+
 # ---------------------------------------------------------------------------
 # Archive Builder & Checksum Manifest Generator
 # ---------------------------------------------------------------------------
@@ -961,6 +993,9 @@ def run_packaging(args: argparse.Namespace) -> int:
         plans.append(collect_pi64_templates(bin_dir, version))
     if selected_platform in ("all", "web"):
         plans.append(collect_web_templates(bin_dir, version))
+        web_bundle_plan = collect_web_bundle(bin_dir, version)
+        if web_bundle_plan.items:
+            plans.append(web_bundle_plan)
 
     # Evaluate viability of plans
     viable_plans: List[PackagePlan] = []

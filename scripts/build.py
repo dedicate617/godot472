@@ -330,28 +330,34 @@ def setup_emsdk_environment(dry_run: bool = False, custom_emsdk: Optional[str] =
         r"C:\emsdk",
     ]
 
-    emsdk_bat = None
+    is_windows = os.name == "nt"
+    script_name = "emsdk_env.bat" if is_windows else "emsdk_env.sh"
+
+    emsdk_script = None
     for cand in candidates:
         if not cand:
             continue
         p = safe_path(cand)
-        bat = p / "emsdk_env.bat"
-        if bat.is_file():
-            emsdk_bat = str(bat)
+        script_file = p / script_name
+        if script_file.is_file():
+            emsdk_script = str(script_file)
             break
 
-    if not emsdk_bat:
-        log_warn("Emscripten emsdk_env.bat not found. Compilation may fail if emcc is not in PATH.")
+    if not emsdk_script:
+        log_warn(f"Emscripten {script_name} not found. Compilation may fail if emcc is not in PATH.")
         return False
 
-    log_info(f"Found Emscripten toolchain activator: {emsdk_bat}")
+    log_info(f"Found Emscripten toolchain activator: {emsdk_script}")
     if dry_run:
-        log_dry_run(f"Would invoke: call \"{emsdk_bat}\" to inject Emscripten compiler environment")
+        log_dry_run(f"Would invoke: {script_name} to inject Emscripten compiler environment")
         return True
 
     try:
         log_info("Activating Emscripten SDK build environment...")
-        cmd = f'call "{emsdk_bat}" >nul 2>&1 && set'
+        if is_windows:
+            cmd = f'call "{emsdk_script}" >nul 2>&1 && set'
+        else:
+            cmd = f'bash -c "source \\"{emsdk_script}\\" >/dev/null 2>&1 && env"'
         proc = subprocess.run(cmd, shell=True, capture_output=True, text=True, errors="replace", check=True)
         new_env: Dict[str, str] = {}
         for line in proc.stdout.splitlines():
@@ -362,7 +368,7 @@ def setup_emsdk_environment(dry_run: bool = False, custom_emsdk: Optional[str] =
         log_success(f"Emscripten environment activated successfully (EMSDK: {os.environ.get('EMSDK', 'N/A')})")
         return True
     except Exception as e:
-        log_error(f"Failed to activate Emscripten environment via {emsdk_bat}: {e}")
+        log_error(f"Failed to activate Emscripten environment via {emsdk_script}: {e}")
         return False
 
 

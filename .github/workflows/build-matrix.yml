@@ -78,6 +78,16 @@ jobs:
             targets: "template_debug template_release"
             apt-packages: "gcc-aarch64-linux-gnu g++-aarch64-linux-gnu pkg-config"
 
+          - name: web-wasm32
+            os: ubuntu-latest
+            platform: web
+            arch: wasm32
+            package-platform: web
+            artifact-name: mindscada-web-wasm32
+            targets: "template_debug template_release"
+            emscripten: true
+            emscripten-version: "4.0.11"
+
     steps:
       - name: Checkout mindscada-engine-ext
         uses: actions/checkout@v4
@@ -107,6 +117,20 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ${{ matrix.apt-packages }}
+
+      - name: Set up Emscripten SDK
+        if: matrix.emscripten == true
+        uses: emscripten-core/setup-emsdk@v16
+        with:
+          version: ${{ matrix.emscripten-version || '4.0.11' }}
+          no-cache: true
+
+      - name: Verify Emscripten Toolchain
+        if: matrix.emscripten == true
+        shell: bash
+        run: |
+          emcc -v
+          node -v
 
       - name: Resolve Godot Version and Release Tag
         id: versions
@@ -223,6 +247,8 @@ jobs:
           | \`MindSCADA_v*_export_templates_windows.tpz\` | Windows x64 Export Templates |
           | \`MindSCADA_v*_export_templates_pi32.tpz\` | Linux ARM32 (Raspberry Pi 32-bit) Export Templates |
           | \`MindSCADA_v*_export_templates_pi64.tpz\` | Linux ARM64 (Raspberry Pi 64-bit) Export Templates |
+          | \`MindSCADA_v*_export_templates_web.tpz\` | Web (WASM32 Threads) Export Templates (Debug & Release) |
+          | \`MindSCADA_v*_Web_bundle.zip\` | Web (WASM32) Standalone Deployment Bundle |
           | \`checksums.sha256\` | SHA256 checksums manifest |
 
           ### Installing Export Templates
