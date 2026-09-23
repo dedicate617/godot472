@@ -71,21 +71,46 @@ def make_multipart_body(fields: Dict[str, str], file_field: str, file_path: Path
     return body, content_type
 
 
+def curl_api(endpoint: str, method: str = "GET", data: Optional[Dict] = None, token: str = "") -> Tuple[int, Optional[Dict]]:
+    """Execute Gitee API request using system curl with domestic direct IP resolve."""
+    url = f"https://gitee.com/api/v5/{endpoint}"
+    if token:
+        sep = "&" if "?" in url else "?"
+        url += f"{sep}access_token={token}"
+
+    curl_bin = shutil.which("curl") or shutil.which("curl.exe") or "curl"
+    cmd = [
+        curl_bin,
+        "--resolve", "gitee.com:443:180.76.198.77",
+        "--noproxy", "*",
+        "-s",
+        "-w", "\n%{http_code}",
+        "-X", method,
+    ]
+    if data:
+        cmd.extend(["-H", "Content-Type: application/json;charset=UTF-8", "-d", json.dumps(data)])
+    cmd.append(url)
+
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        output = proc.stdout.strip()
+        lines = output.rsplit("\n", 1)
+        http_code = int(lines[1]) if len(lines) > 1 and lines[1].isdigit() else (200 if proc.returncode == 0 else 500)
+        body_text = lines[0] if len(lines) > 1 else output
+        try:
+            return http_code, json.loads(body_text)
+        except Exception:
+            return http_code, None
+    except Exception as e:
+        log_warn(f"curl_api exception: {e}")
+        return 500, None
+
+
 def get_existing_release(repo: str, tag: str, token: str) -> Optional[Dict]:
     """Query Gitee API for an existing release with the given tag."""
-    url = f"https://gitee.com/api/v5/repos/{repo}/releases/tags/{tag}?access_token={token}"
-    req = urllib.request.Request(url, headers={"User-Agent": "MindSCADA-Publisher"})
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            if resp.status == 200:
-                data = json.loads(resp.read().decode("utf-8"))
-                return data
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            return None
-        log_warn(f"Error checking existing Gitee release for tag {tag}: HTTP {e.code}")
-    except Exception as e:
-        log_warn(f"Network error checking Gitee release: {e}")
+    code, data = curl_api(f"repos/{repo}/releases/tags/{tag}", method="GET", token=token)
+    if code == 200 and data and "id" in data:
+        return data
     return None
 
 
@@ -96,7 +121,6 @@ def create_release(repo: str, tag: str, name: str, body: str, token: str, prerel
         log_info(f"Release for tag '{tag}' already exists on Gitee (ID: {existing['id']}).")
         return existing["id"]
 
-    url = f"https://gitee.com/api/v5/repos/{repo}/releases"
     payload = {
         "access_token": token,
         "tag_name": tag,
@@ -105,53 +129,45 @@ def create_release(repo: str, tag: str, name: str, body: str, token: str, prerel
         "prerelease": prerelease,
         "target_commitish": target_commitish,
     }
-    data_bytes = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        url,
-        data=data_bytes,
-        headers={
-            "Content-Type": "application/json;charset=UTF-8",
-            "User-Agent": "MindSCADA-Publisher",
-        },
-    )
+    code, res = curl_api(f"repos/{repo}/releases", method="POST", data=payload, token=token)
+    if code in (200, 201) and res and "id" in res:
+        release_id = res["id"]
+        log_success(f"Created Gitee release '{name}' ({tag}) with ID: {release_id}")
+        return release_id
 
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            res = json.loads(resp.read().decode("utf-8"))
-            release_id = res.get("id")
-            log_success(f"Created Gitee release '{name}' ({tag}) with ID: {release_id}")
-            return release_id
-    except urllib.error.HTTPError as e:
-        error_content = e.read().decode("utf-8", errors="replace")
-        log_error(f"Failed to create Gitee release (HTTP {e.code}): {error_content}")
-        # Retry querying existing in case of race condition
-        existing = get_existing_release(repo, tag, token)
-        if existing and "id" in existing:
-            return existing["id"]
-    except Exception as e:
-        log_error(f"Exception creating Gitee release: {e}")
+    # Fallback check
+    existing = get_existing_release(repo, tag, token)
+    if existing and "id" in existing:
+        return existing["id"]
     return None
 
 
 def get_release_asset_names(repo: str, release_id: int, token: str) -> List[str]:
     """Retrieve existing asset names on the release to avoid duplicate uploads."""
-    url = f"https://gitee.com/api/v5/repos/{repo}/releases/{release_id}?access_token={token}"
-    req = urllib.request.Request(url, headers={"User-Agent": "MindSCADA-Publisher"})
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            if resp.status == 200:
-                data = json.loads(resp.read().decode("utf-8"))
-                return [a.get("name") for a in data.get("assets", []) if a.get("name")]
-    except Exception:
-        pass
+    code, data = curl_api(f"repos/{repo}/releases/{release_id}", method="GET", token=token)
+    if code == 200 and data:
+        return [a.get("name") for a in data.get("assets", []) if a.get("name")]
     return []
 
 
 def upload_asset(repo: str, release_id: int, file_path: Path, token: str) -> bool:
     """Upload a distribution file to Gitee Release attach_files API using fast direct curl or urllib."""
-    url = f"https://gitee.com/api/v5/repos/{repo}/releases/{release_id}/attach_files"
+    url = f"https://gitee.com/api/v5/repos/{repo}/releases/{release_id}/attach_files?access_token={token}"
     file_size_mb = file_path.stat().st_size / (1024 * 1024)
     log_info(f"Uploading asset to Gitee: {file_path.name} ({file_size_mb:.2f} MB)...")
+
+    # Normalize file path to avoid UNC path issues with curl on Windows VMware shared folders
+    file_str = str(file_path)
+    if file_str.startswith("\\\\vmware-host\\Shared Folders\\D\\"):
+        file_str = file_str.replace("\\\\vmware-host\\Shared Folders\\D\\", "Z:\\D\\")
+    elif file_str.startswith("\\\\vmware-host\\Shared Folders\\"):
+        file_str = file_str.replace("\\\\vmware-host\\Shared Folders\\", "Z:\\")
+
+    try:
+        rel = file_path.relative_to(Path.cwd())
+        file_arg = str(rel)
+    except Exception:
+        file_arg = file_str
 
     # Prefer system curl if available: streams from disk and bypasses proxy with direct IP
     curl_bin = shutil.which("curl") or shutil.which("curl.exe")
@@ -161,18 +177,16 @@ def upload_asset(repo: str, release_id: int, file_path: Path, token: str) -> boo
             "--resolve", "gitee.com:443:180.76.198.77",
             "--noproxy", "*",
             "-s",
-            "-X", "POST",
-            "-F", f"access_token={token}",
-            "-F", f"file=@{file_path}",
+            "-F", f"file=@{file_arg}",
             url,
         ]
         try:
-            proc = subprocess.run(curl_cmd, capture_output=True, text=True, timeout=600)
-            if proc.returncode == 0:
+            proc = subprocess.run(curl_cmd, capture_output=True, text=True, timeout=1200)
+            if proc.returncode == 0 and ('"browser_download_url"' in proc.stdout or '"url"' in proc.stdout):
                 log_success(f"Asset uploaded successfully: {file_path.name}")
                 return True
             else:
-                log_warn(f"curl upload failed with code {proc.returncode}: {proc.stderr[:200]}")
+                log_warn(f"curl upload failed with code {proc.returncode}: {proc.stdout[:200] or proc.stderr[:200]}")
         except Exception as e:
             log_warn(f"curl invocation exception: {e}")
 
@@ -180,7 +194,7 @@ def upload_asset(repo: str, release_id: int, file_path: Path, token: str) -> boo
     fields = {"access_token": token}
     body, content_type = make_multipart_body(fields, "file", file_path)
     req = urllib.request.Request(
-        f"{url}?access_token={token}",
+        url,
         data=body,
         headers={
             "Content-Type": content_type,
