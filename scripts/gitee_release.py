@@ -18,6 +18,8 @@ import json
 import mimetypes
 import os
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 import urllib.error
 import urllib.parse
@@ -131,17 +133,54 @@ def create_release(repo: str, tag: str, name: str, body: str, token: str, prerel
     return None
 
 
+def get_release_asset_names(repo: str, release_id: int, token: str) -> List[str]:
+    """Retrieve existing asset names on the release to avoid duplicate uploads."""
+    url = f"https://gitee.com/api/v5/repos/{repo}/releases/{release_id}?access_token={token}"
+    req = urllib.request.Request(url, headers={"User-Agent": "MindSCADA-Publisher"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            if resp.status == 200:
+                data = json.loads(resp.read().decode("utf-8"))
+                return [a.get("name") for a in data.get("assets", []) if a.get("name")]
+    except Exception:
+        pass
+    return []
+
+
 def upload_asset(repo: str, release_id: int, file_path: Path, token: str) -> bool:
-    """Upload a distribution file to Gitee Release attach_files API."""
-    url = f"https://gitee.com/api/v5/repos/{repo}/releases/{release_id}/attach_files?access_token={token}"
-    fields = {"access_token": token}
-    
+    """Upload a distribution file to Gitee Release attach_files API using fast direct curl or urllib."""
+    url = f"https://gitee.com/api/v5/repos/{repo}/releases/{release_id}/attach_files"
     file_size_mb = file_path.stat().st_size / (1024 * 1024)
     log_info(f"Uploading asset to Gitee: {file_path.name} ({file_size_mb:.2f} MB)...")
 
+    # Prefer system curl if available: streams from disk and bypasses proxy with direct IP
+    curl_bin = shutil.which("curl") or shutil.which("curl.exe")
+    if curl_bin:
+        curl_cmd = [
+            curl_bin,
+            "--resolve", "gitee.com:443:180.76.198.77",
+            "--noproxy", "*",
+            "-s",
+            "-X", "POST",
+            "-F", f"access_token={token}",
+            "-F", f"file=@{file_path}",
+            url,
+        ]
+        try:
+            proc = subprocess.run(curl_cmd, capture_output=True, text=True, timeout=600)
+            if proc.returncode == 0:
+                log_success(f"Asset uploaded successfully: {file_path.name}")
+                return True
+            else:
+                log_warn(f"curl upload failed with code {proc.returncode}: {proc.stderr[:200]}")
+        except Exception as e:
+            log_warn(f"curl invocation exception: {e}")
+
+    # Fallback to urllib
+    fields = {"access_token": token}
     body, content_type = make_multipart_body(fields, "file", file_path)
     req = urllib.request.Request(
-        url,
+        f"{url}?access_token={token}",
         data=body,
         headers={
             "Content-Type": content_type,
@@ -152,9 +191,7 @@ def upload_asset(repo: str, release_id: int, file_path: Path, token: str) -> boo
     try:
         with urllib.request.urlopen(req, timeout=300) as resp:
             if resp.status in (200, 201):
-                res = json.loads(resp.read().decode("utf-8"))
-                download_url = res.get("browser_download_url") or res.get("url")
-                log_success(f"Asset uploaded successfully: {file_path.name} -> {download_url or 'OK'}")
+                log_success(f"Asset uploaded successfully: {file_path.name}")
                 return True
             else:
                 log_warn(f"Upload response HTTP {resp.status} for {file_path.name}")
@@ -279,9 +316,17 @@ def main() -> int:
         return 1
 
     # 2. Upload assets
+    existing_asset_names = set(get_release_asset_names(repo, release_id, token))
+    if existing_asset_names:
+        log_info(f"Found {len(existing_asset_names)} asset(s) already attached on Gitee release.")
+
     success_count = 0
     fail_count = 0
     for a in assets:
+        if a.name in existing_asset_names:
+            log_info(f"Asset already attached to release, skipping: {a.name}")
+            success_count += 1
+            continue
         ok = upload_asset(repo, release_id, a, token)
         if ok:
             success_count += 1
