@@ -87,7 +87,7 @@ def get_existing_release(repo: str, tag: str, token: str) -> Optional[Dict]:
     return None
 
 
-def create_release(repo: str, tag: str, name: str, body: str, token: str, prerelease: bool = False) -> Optional[int]:
+def create_release(repo: str, tag: str, name: str, body: str, token: str, prerelease: bool = False, target_commitish: str = "master") -> Optional[int]:
     """Create a new Gitee Release or return existing release ID."""
     existing = get_existing_release(repo, tag, token)
     if existing and "id" in existing:
@@ -101,6 +101,7 @@ def create_release(repo: str, tag: str, name: str, body: str, token: str, prerel
         "name": name,
         "body": body,
         "prerelease": prerelease,
+        "target_commitish": target_commitish,
     }
     data_bytes = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
