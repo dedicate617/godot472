@@ -278,3 +278,38 @@ jobs:
             fi
           done
           echo "Upload complete for ${{ matrix.name }}."
+
+      # -----------------------------------------------------------------------
+      # Gitee Release: push code/tags and upload release assets to Gitee
+      # -----------------------------------------------------------------------
+      - name: Sync and Upload Release to Gitee
+        if: >
+          inputs.dry_run != true &&
+          startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITEE_REPO: "bosmutus/mind-scada-release"
+          RELEASE_TAG: ${{ steps.versions.outputs.release_tag }}
+          PLAIN_VER: ${{ steps.versions.outputs.plain_ver }}
+        run: |
+          echo "============================================================================"
+          echo "Syncing and Uploading Release to Gitee (${GITEE_REPO})..."
+          echo "============================================================================"
+          if [ -n "${GITEE_TOKEN}" ]; then
+            # 1. Sync tag/branch to Gitee
+            git remote add gitee "https://bosmutus:${GITEE_TOKEN}@gitee.com/${GITEE_REPO}.git" 2>/dev/null || \
+            git remote set-url gitee "https://bosmutus:${GITEE_TOKEN}@gitee.com/${GITEE_REPO}.git"
+            git push gitee HEAD:master --tags --force || echo "::warning::Git push to Gitee returned non-zero"
+
+            # 2. Upload release assets via Gitee Open API
+            python scripts/gitee_release.py \
+              --token "${GITEE_TOKEN}" \
+              --repo "${GITEE_REPO}" \
+              --tag "${RELEASE_TAG}" \
+              --name "MindSCADA Engine v${PLAIN_VER}" \
+              --dist-dir dist/ || echo "::warning::Gitee release asset upload returned non-zero"
+            echo "Gitee sync & asset upload completed."
+          else
+            echo "::notice::GITEE_TOKEN secret not configured in repository settings. Code/tag push and assets upload to Gitee skipped in CI. (To enable in CI, add GITEE_TOKEN to GitHub repository secrets)."
+          fi

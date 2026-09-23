@@ -171,4 +171,34 @@ python scratch/dev_server.py --port 8090 --dir ../godot.4.7.2/bin/.web_zip
 | `linux-arm64` | `ubuntu-latest` | arm64 | `MindSCADA_v*_export_templates_pi64.tpz` |
 
 - **代码推送触发**：推送到 `master`/`main` 分支时自动触发全矩阵编译并生成 CI 构建制品。
-- **Release 发布触发**：推送版本 Tag（如 `git tag v4.7.2-20260923 && git push origin --tags`）时，流水线各节点自动将构建制品与 `checksums.sha256` 发布到 GitHub Releases。
+- **Release 发布触发**：推送版本 Tag（如 `git tag v4.7.2-20260923 && git push origin --tags`）时，流水线各节点自动将构建制品与 `checksums.sha256` 发布到 GitHub Releases，并同步至 Gitee。
+
+---
+
+## 七、一键双平台发布指南 (`publish.bat` / `publish.sh`)
+
+工程提供了 `publish.bat`（Windows）与 `publish.sh`（Linux / WSL），可一键完成向 **GitHub** 与 **Gitee** 同步推送 Release：
+
+```cmd
+# 1. 自动生成当日版本 Tag 并发布到 GitHub & Gitee：
+publish.bat
+
+# 2. 指定明确版本 Tag 发布：
+publish.bat v4.7.2-20260923
+
+# 3. 演练模式 (检查发布规划，不修改远程)：
+publish.bat --dry-run
+
+# 4. 查看发布帮助：
+publish.bat --help
+```
+
+### 自动化发布流程：
+1. **远端配置验证**：自动校验并配置 `origin`（GitHub: `https://github.com/dedicate617/godot472.git`）与 `gitee`（Gitee: `https://gitee.com/bosmutus/mind-scada-release.git`）。
+2. **Git Tag 生成**：自动生成语义化版本标签（如 `v4.7.2-YYYYMMDD`）并打标。
+3. **推送至 GitHub**：推送 `master` 与版本标签，触发 GitHub Actions 多架构全矩阵云端编译与 GitHub Releases 发布。
+4. **同步至 Gitee**：将分支与版本标签同步推送至 Gitee 仓库。
+5. **Gitee Release 产物发布**：
+   - 云端流水线：若在 GitHub 仓库 Secrets 中配置了 `GITEE_TOKEN`，流水线将自动通过 Gitee Open API 上传各架构产物包至 Gitee Releases。
+   - 本地脚本：本地若已构建好 `dist/` 产物包且配置了 `GITEE_TOKEN`，脚本将自动调用 `scripts/gitee_release.py` 将安装包直传至 Gitee Releases。
+
