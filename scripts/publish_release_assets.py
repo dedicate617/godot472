@@ -188,6 +188,12 @@ def main() -> int:
         help="Local staging directory for the release repo (default: 'scratch/mind-scada-release')",
     )
     parser.add_argument(
+        "--token",
+        type=str,
+        default=os.environ.get("GITEE_TOKEN"),
+        help="Gitee Personal Access Token (defaults to GITEE_TOKEN env var)",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         default=False,
