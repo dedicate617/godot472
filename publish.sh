@@ -105,23 +105,23 @@ fi
 
 # 3. Configure remotes
 echo ""
-echo "===> [Step 1/5] Verifying Remote Configurations..."
+echo "===> [Step 1/4] Verifying GitHub Remote Configuration..."
 if ! git remote get-url origin >/dev/null 2>&1; then
     echo "Adding GitHub remote 'origin'..."
     git remote add origin "${GITHUB_REMOTE_URL}"
+else
+    git remote set-url origin "${GITHUB_REMOTE_URL}"
 fi
 
-if ! git remote get-url gitee >/dev/null 2>&1; then
-    echo "Adding Gitee remote 'gitee'..."
-    git remote add gitee "${GITEE_REMOTE_URL}"
-else
-    git remote set-url gitee "${GITEE_REMOTE_URL}"
+if git remote get-url gitee >/dev/null 2>&1; then
+    echo "[INFO] Removing legacy 'gitee' remote from source repo (Gitee is asset-only)..."
+    git remote remove gitee
 fi
-echo "[OK] Remotes configured: origin (GitHub) & gitee (Gitee)"
+echo "[OK] GitHub remote 'origin' verified (${GITHUB_REMOTE_URL})"
 
 # 4. Create Git Tag
 echo ""
-echo "===> [Step 2/5] Creating Git Release Tag '${TARGET_TAG}'..."
+echo "===> [Step 2/4] Creating Git Release Tag '${TARGET_TAG}'..."
 if git rev-parse "${TARGET_TAG}" >/dev/null 2>&1; then
     echo "Tag '${TARGET_TAG}' already exists locally."
 else
@@ -133,9 +133,9 @@ else
     fi
 fi
 
-# 5. Push to GitHub
+# 5. Push Source Code and Release Tag to GitHub (origin)
 echo ""
-echo "===> [Step 3/5] Pushing to GitHub (origin master & ${TARGET_TAG})..."
+echo "===> [Step 3/4] Pushing Source & Tag to GitHub (triggers CI/CD build matrix)..."
 if [ "${IS_DRY_RUN}" = true ]; then
     echo "[DRY-RUN] Would execute: git push origin master"
     echo "[DRY-RUN] Would execute: git push origin ${TARGET_TAG}"
@@ -145,38 +145,17 @@ else
     echo "[OK] Successfully pushed to GitHub! CI/CD workflow triggered."
 fi
 
-# 6. Push to Gitee
+# 6. Publish ONLY Final Compiled Release Assets to Gitee (mind-scada-release)
 echo ""
-echo "===> [Step 4/5] Pushing to Gitee (gitee master & ${TARGET_TAG})..."
+echo "===> [Step 4/4] Publishing Compiled Release Assets to Gitee (${GITEE_REMOTE_URL})..."
+ASSET_ARGS=("--tag" "${TARGET_TAG}" "--dist-dir" "dist")
 if [ "${IS_DRY_RUN}" = true ]; then
-    echo "[DRY-RUN] Would execute: git push gitee master --force"
-    echo "[DRY-RUN] Would execute: git push gitee ${TARGET_TAG} --force"
-else
-    git push gitee master --force
-    git push gitee "${TARGET_TAG}" --force
-    echo "[OK] Successfully pushed to Gitee!"
+    ASSET_ARGS+=("--dry-run")
 fi
 
-# 7. Check for local dist assets to upload to Gitee
-echo ""
-echo "===> [Step 5/5] Checking for Local Dist Assets to Upload to Gitee..."
-if ls dist/*.tpz >/dev/null 2>&1; then
-    if [[ -n "${GITEE_TOKEN}" ]]; then
-        echo "Found local dist/ artifacts and GITEE_TOKEN is set."
-        EXTRA_ARGS=()
-        if [ "${IS_DRY_RUN}" = true ]; then
-            EXTRA_ARGS+=("--dry-run")
-        fi
-        python scripts/gitee_release.py --tag "${TARGET_TAG}" --dist-dir dist "${EXTRA_ARGS[@]}"
-    else
-        echo "[INFO] Local dist/ packages found, but GITEE_TOKEN is not set in environment."
-        echo "[INFO] GitHub Actions CI/CD will build all platforms and upload release assets."
-        echo "[TIP]  To upload local dist/ assets to Gitee directly, run:"
-        echo "       GITEE_TOKEN=your_token python scripts/gitee_release.py --tag ${TARGET_TAG}"
-    fi
-else
-    echo "[INFO] No local dist/ packages found. GitHub Actions CI/CD will compile all 4 platforms."
-fi
+python scripts/publish_release_assets.py "${ASSET_ARGS[@]}"
+echo "[OK] Successfully published compiled release assets to Gitee!"
+
 
 echo ""
 echo "============================================================================"

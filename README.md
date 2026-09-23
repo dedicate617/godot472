@@ -194,11 +194,13 @@ publish.bat --help
 ```
 
 ### 自动化发布流程：
-1. **远端配置验证**：自动校验并配置 `origin`（GitHub: `https://github.com/dedicate617/godot472.git`）与 `gitee`（Gitee: `https://gitee.com/bosmutus/mind-scada-release.git`）。
+1. **本地仓库与远端检查**：检查本地工作区状态，确保 `origin` 指向 GitHub 源码仓库（`https://github.com/dedicate617/godot472.git`）。
 2. **Git Tag 生成**：自动生成语义化版本标签（如 `v4.7.2-YYYYMMDD`）并打标。
-3. **推送至 GitHub**：推送 `master` 与版本标签，触发 GitHub Actions 多架构全矩阵云端编译与 GitHub Releases 发布。
-4. **同步至 Gitee**：将分支与版本标签同步推送至 Gitee 仓库。
-5. **Gitee Release 产物发布**：
-   - 云端流水线：若在 GitHub 仓库 Secrets 中配置了 `GITEE_TOKEN`，流水线将自动通过 Gitee Open API 上传各架构产物包至 Gitee Releases。
-   - 本地脚本：本地若已构建好 `dist/` 产物包且配置了 `GITEE_TOKEN`，脚本将自动调用 `scripts/gitee_release.py` 将安装包直传至 Gitee Releases。
+3. **推送源码至 GitHub**：推送 `master` 与版本标签至 GitHub，触发 GitHub Actions 多架构全矩阵云端编译与 GitHub Releases 发布。
+4. **推送编译 Release 资产至 Gitee（纯产物仓库）**：
+   - 自动扫描本地 `dist/` 编译产物包（`.zip`、`.tpz`、`checksums.sha256`）。
+   - 将**编译资产与自动生成的发行文档 README.md** 提交并打标推送到专用的 Gitee 产物仓库（`https://gitee.com/bosmutus/mind-scada-release.git`）。
+   - **注意**：Gitee 仓库仅承载最终编译好的 Release 资产，不存放引擎源码，确保产物发布轻量且无污染。
+   - 若配置了 `GITEE_TOKEN`，还会自动同步创建 Gitee Web Release 附件。
+
 

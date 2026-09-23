@@ -96,30 +96,23 @@ REM ----------------------------------------------------------------------------
 REM 3. Configure and Verify Remotes
 REM ----------------------------------------------------------------------------
 echo.
-echo ===^> [Step 1/5] Verifying Remote Configurations...
-
-REM Ensure 'origin' points to GitHub
+echo ===^> [Step 1/4] Verifying GitHub Remote Configuration...
 git remote get-url origin >nul 2>&1
 if errorlevel 1 (
     echo Adding GitHub remote 'origin'...
     git remote add origin %GITHUB_REMOTE_URL%
-)
-
-REM Ensure 'gitee' points to Gitee
-git remote get-url gitee >nul 2>&1
-if errorlevel 1 (
-    echo Adding Gitee remote 'gitee'...
-    git remote add gitee %GITEE_REMOTE_URL%
 ) else (
-    git remote set-url gitee %GITEE_REMOTE_URL%
+    git remote set-url origin %GITHUB_REMOTE_URL%
 )
-echo [OK] Remotes configured: origin (GitHub) ^& gitee (Gitee)
+echo [OK] GitHub remote 'origin' verified.
+
+
 
 REM ----------------------------------------------------------------------------
 REM 4. Create Local Git Tag
 REM ----------------------------------------------------------------------------
 echo.
-echo ===^> [Step 2/5] Creating Git Release Tag '%TARGET_TAG%'...
+echo ===^> [Step 2/4] Creating Git Release Tag '%TARGET_TAG%'...
 
 git rev-parse "%TARGET_TAG%" >nul 2>&1
 if not errorlevel 1 (
@@ -138,10 +131,10 @@ if not errorlevel 1 (
 )
 
 REM ----------------------------------------------------------------------------
-REM 5. Push to GitHub (origin)
+REM 5. Push Source Code and Release Tag to GitHub (origin)
 REM ----------------------------------------------------------------------------
 echo.
-echo ===^> [Step 3/5] Pushing to GitHub (origin master ^& %TARGET_TAG%)...
+echo ===^> [Step 3/4] Pushing Source ^& Tag to GitHub (triggers CI/CD build matrix)...
 if "%IS_DRY_RUN%"=="1" (
     echo [DRY-RUN] Would execute: git push origin master
     echo [DRY-RUN] Would execute: git push origin %TARGET_TAG%
@@ -160,49 +153,22 @@ if "%IS_DRY_RUN%"=="1" (
 )
 
 REM ----------------------------------------------------------------------------
-REM 6. Push to Gitee (gitee)
+REM 6. Publish ONLY Final Compiled Release Assets to Gitee (mind-scada-release)
 REM ----------------------------------------------------------------------------
 echo.
-echo ===^> [Step 4/5] Pushing to Gitee (gitee master ^& %TARGET_TAG%)...
+echo ===^> [Step 4/4] Publishing Compiled Release Assets to Gitee (%GITEE_REMOTE_URL%)...
+set ASSET_ARGS=--tag %TARGET_TAG% --dist-dir dist
 if "%IS_DRY_RUN%"=="1" (
-    echo [DRY-RUN] Would execute: git push gitee master --force
-    echo [DRY-RUN] Would execute: git push gitee %TARGET_TAG% --force
-) else (
-    git push gitee master --force
-    if errorlevel 1 (
-        echo [ERROR] Failed to push master branch to Gitee!
-        exit /b 1
-    )
-    git push gitee %TARGET_TAG% --force
-    if errorlevel 1 (
-        echo [ERROR] Failed to push tag %TARGET_TAG% to Gitee!
-        exit /b 1
-    )
-    echo [OK] Successfully pushed to Gitee!
+    set ASSET_ARGS=!ASSET_ARGS! --dry-run
 )
 
-REM ----------------------------------------------------------------------------
-REM 7. Upload Packaged Assets to Gitee Release (if local dist/ artifacts exist)
-REM ----------------------------------------------------------------------------
-echo.
-echo ===^> [Step 5/5] Checking for Local Dist Assets to Upload to Gitee...
-if exist "dist\*.tpz" (
-    if defined GITEE_TOKEN (
-        echo Found local dist/ artifacts and GITEE_TOKEN is set.
-        if "%IS_DRY_RUN%"=="1" (
-            python scripts\gitee_release.py --tag %TARGET_TAG% --dist-dir dist\ --dry-run
-        ) else (
-            python scripts\gitee_release.py --tag %TARGET_TAG% --dist-dir dist\
-        )
-    ) else (
-        echo [INFO] Local dist/ packages found, but GITEE_TOKEN is not set in environment.
-        echo [INFO] GitHub Actions CI/CD will build all platforms and upload release assets.
-        echo [TIP]  To upload local dist/ assets to Gitee directly, run:
-        echo        set GITEE_TOKEN=your_token ^&^& python scripts\gitee_release.py --tag %TARGET_TAG%
-    )
-) else (
-    echo [INFO] No local dist/ packages found. GitHub Actions CI/CD will compile all 4 platforms.
+python scripts\publish_release_assets.py !ASSET_ARGS!
+if errorlevel 1 (
+    echo [ERROR] Failed to publish release assets to Gitee!
+    exit /b 1
 )
+echo [OK] Successfully published compiled release assets to Gitee!
+
 
 REM ----------------------------------------------------------------------------
 REM Summary
