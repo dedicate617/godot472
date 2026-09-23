@@ -157,7 +157,33 @@ REM 6. Publish ONLY Final Compiled Release Assets to Gitee (mind-scada-release)
 REM ----------------------------------------------------------------------------
 echo.
 echo ===^> [Step 4/4] Publishing Compiled Release Assets to Gitee (%GITEE_REMOTE_URL%)...
+
+if not defined GITEE_TOKEN (
+    if exist "%SCRIPT_DIR%.gitee_token" (
+        set /p GITEE_TOKEN=<"%SCRIPT_DIR%.gitee_token"
+    )
+)
+
+if not defined GITEE_TOKEN if not "%IS_DRY_RUN%"=="1" (
+    echo.
+    echo ----------------------------------------------------------------------------
+    echo [提示] 尚未检测到 Gitee 私人令牌 (GITEE_TOKEN)。
+    echo Gitee 平台对普通 git push 限制单文件不超过 50MB (MindStudio 等包为 60~80MB)。
+    echo 若需将 dist/ 下的所有二进制资产挂载到 Gitee Release 页面，需要 Gitee Token。
+    echo Token 获取地址: https://gitee.com/profile/personal_access_tokens (勾选 projects 权限)
+    echo ----------------------------------------------------------------------------
+    set /p USER_TOKEN="请输入 Gitee Token (直接回车跳过本地二进制上传): "
+    if defined USER_TOKEN (
+        set GITEE_TOKEN=!USER_TOKEN!
+        echo !USER_TOKEN!> "%SCRIPT_DIR%.gitee_token"
+        echo [OK] 已将 Token 缓存至 .gitee_token，后续发布将自动读取。
+    )
+)
+
 set ASSET_ARGS=--tag %TARGET_TAG% --dist-dir dist
+if defined GITEE_TOKEN (
+    set ASSET_ARGS=!ASSET_ARGS! --token !GITEE_TOKEN!
+)
 if "%IS_DRY_RUN%"=="1" (
     set ASSET_ARGS=!ASSET_ARGS! --dry-run
 )
@@ -167,7 +193,7 @@ if errorlevel 1 (
     echo [ERROR] Failed to publish release assets to Gitee!
     exit /b 1
 )
-echo [OK] Successfully published compiled release assets to Gitee!
+echo [OK] Successfully processed Gitee release publishing!
 
 
 REM ----------------------------------------------------------------------------

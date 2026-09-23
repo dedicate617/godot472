@@ -318,8 +318,13 @@ def main() -> int:
     log_success(f"Successfully pushed release repository to Gitee ({args.repo_url})!")
 
     # 8. Upload binary packages to Gitee Web Release via API (supports files up to 100MB)
-    gitee_token = os.environ.get("GITEE_TOKEN")
+    gitee_token = args.token or os.environ.get("GITEE_TOKEN")
+    token_file = Path(__file__).parent.parent / ".gitee_token"
+    if not gitee_token and token_file.is_file():
+        gitee_token = token_file.read_text(encoding="utf-8").strip()
+
     gitee_script = Path(__file__).parent / "gitee_release.py"
+    upload_success = False
     if gitee_token and gitee_script.is_file():
         log_info("GITEE_TOKEN detected. Uploading binary packages to Gitee Release via API...")
         try:
@@ -328,18 +333,23 @@ def main() -> int:
                 check=True,
                 stdin=subprocess.DEVNULL,
             )
+            upload_success = True
             log_success("All binary packages uploaded to Gitee Release successfully!")
         except Exception as e:
             log_warn(f"Failed to upload release assets to Gitee API: {e}")
     else:
-        log_info("GITEE_TOKEN not set in local environment.")
+        log_warn("GITEE_TOKEN not set in local environment.")
         log_info("[TIP] Gitee Web Release attachment uploads require a Personal Access Token.")
         log_info("[TIP] To upload local binaries to Gitee Release, run:")
-        log_info(f"      set GITEE_TOKEN=<your_token> && python scripts/gitee_release.py --tag {tag}")
-        log_info("[INFO] GitHub Actions CI/CD will automatically compile and release to GitHub Releases.")
+        log_info(f"      python scripts/gitee_release.py --token <your_token> --tag {tag} --dist-dir dist")
+        log_info("      Or configure GITEE_TOKEN via: setx GITEE_TOKEN <your_token>")
+        log_info("[INFO] GitHub Actions CI/CD will also automatically compile and release to GitHub Releases.")
 
     print(banner)
-    log_success(f"Release {tag} published to Gitee successfully!")
+    if upload_success:
+        log_success(f"Release {tag} published to Gitee with all binary assets!")
+    else:
+        log_info(f"Release {tag} git tag & manifest pushed to Gitee. (Binary assets pending GITEE_TOKEN)")
     log_info(f"Gitee Repository : {args.repo_url.replace('.git', '')}")
     log_info(f"Gitee Release    : {args.repo_url.replace('.git', '')}/releases")
     print(banner)

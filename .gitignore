@@ -28,3 +28,10 @@ dist/
 !deps/**/*.a
 !deps/**/*.so
 
+# Secrets and tokens
+.gitee_token
+*.token
+.env
+.env.*
+
+

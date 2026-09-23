@@ -132,7 +132,7 @@ def create_release(repo: str, tag: str, name: str, body: str, token: str, prerel
 
 def upload_asset(repo: str, release_id: int, file_path: Path, token: str) -> bool:
     """Upload a distribution file to Gitee Release attach_files API."""
-    url = f"https://gitee.com/api/v5/repos/{repo}/releases/{release_id}/attach_files"
+    url = f"https://gitee.com/api/v5/repos/{repo}/releases/{release_id}/attach_files?access_token={token}"
     fields = {"access_token": token}
     
     file_size_mb = file_path.stat().st_size / (1024 * 1024)
@@ -232,6 +232,11 @@ def main() -> int:
     args = parser.parse_args()
 
     token = args.token
+    if not token:
+        token_file = Path(__file__).parent.parent / ".gitee_token"
+        if token_file.is_file():
+            token = token_file.read_text(encoding="utf-8").strip()
+
     if not token and not args.dry_run:
         log_error("Gitee access token is required. Pass --token or set GITEE_TOKEN environment variable.")
         log_info("To generate a token, visit: https://gitee.com/profile/personal_access_tokens (needs 'projects' scope)")

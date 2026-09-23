@@ -148,13 +148,21 @@ fi
 # 6. Publish ONLY Final Compiled Release Assets to Gitee (mind-scada-release)
 echo ""
 echo "===> [Step 4/4] Publishing Compiled Release Assets to Gitee (${GITEE_REMOTE_URL})..."
+
+if [ -z "${GITEE_TOKEN:-}" ] && [ -f "${SCRIPT_DIR}/.gitee_token" ]; then
+    GITEE_TOKEN=$(cat "${SCRIPT_DIR}/.gitee_token" | tr -d '\r\n')
+fi
+
 ASSET_ARGS=("--tag" "${TARGET_TAG}" "--dist-dir" "dist")
+if [ -n "${GITEE_TOKEN:-}" ]; then
+    ASSET_ARGS+=("--token" "${GITEE_TOKEN}")
+fi
 if [ "${IS_DRY_RUN}" = true ]; then
     ASSET_ARGS+=("--dry-run")
 fi
 
 python scripts/publish_release_assets.py "${ASSET_ARGS[@]}"
-echo "[OK] Successfully published compiled release assets to Gitee!"
+echo "[OK] Successfully processed Gitee release publishing!"
 
 
 echo ""
