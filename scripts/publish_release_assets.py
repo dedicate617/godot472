@@ -263,12 +263,13 @@ def main() -> int:
         subprocess.run(["git", "-C", str(staging_dir), "checkout", "master"], check=False)
         subprocess.run(["git", "-C", str(staging_dir), "pull", "--rebase"], check=False)
 
-    # 3. Copy assets into staging repository
-    log_info("Copying release assets into staging repository...")
+    # 3. Copy manifest assets into staging repository (README & checksums only to stay within 50MB git limit)
+    log_info("Deploying manifest assets into release repository...")
     for src, _, _ in assets_info:
-        dst = staging_dir / src.name
-        log_info(f"   -> Copying {src.name}...")
-        shutil.copy2(src, dst)
+        if src.suffix in (".sha256", ".md", ".txt"):
+            dst = staging_dir / src.name
+            log_info(f"   -> Copying manifest {src.name}...")
+            shutil.copy2(src, dst)
 
     # 4. Generate README.md
     readme_content = generate_release_readme(tag, version, assets_info)
@@ -276,50 +277,75 @@ def main() -> int:
     log_success("Generated release README.md with download & verification table.")
 
     # 5. Git commit & tag in release repository
-    log_info("Staging and committing release assets...")
-    subprocess.run(["git", "-C", str(staging_dir), "add", "."], check=True)
+    log_info("Staging and committing release manifest...")
+    subprocess.run(["git", "-C", str(staging_dir), "add", "."], check=True, stdin=subprocess.DEVNULL)
 
     status_proc = subprocess.run(
         ["git", "-C", str(staging_dir), "status", "--porcelain"],
         capture_output=True,
         text=True,
         check=True,
+        stdin=subprocess.DEVNULL,
     )
     if status_proc.stdout.strip():
-        commit_msg = f"Release {tag}: update MindSCADA compiled distribution assets"
-        subprocess.run(["git", "-C", str(staging_dir), "commit", "-m", commit_msg], check=True)
-        log_success(f"Committed release assets in staging repo: '{commit_msg}'")
+        commit_msg = f"Release {tag}: update MindSCADA distribution manifest & checksums"
+        subprocess.run(["git", "-C", str(staging_dir), "commit", "-m", commit_msg], check=True, stdin=subprocess.DEVNULL)
+        log_success(f"Committed release manifest in staging repo: '{commit_msg}'")
     else:
-        log_info("No asset changes detected since last commit.")
+        log_info("No manifest changes detected since last commit.")
 
     # 6. Create release tag
     tag_check = subprocess.run(
         ["git", "-C", str(staging_dir), "rev-parse", tag],
         capture_output=True,
+        stdin=subprocess.DEVNULL,
     )
     if tag_check.returncode == 0:
         log_info(f"Tag '{tag}' already exists in release repository, replacing tag...")
-        subprocess.run(["git", "-C", str(staging_dir), "tag", "-d", tag], check=True)
+        subprocess.run(["git", "-C", str(staging_dir), "tag", "-d", tag], check=True, stdin=subprocess.DEVNULL)
 
     subprocess.run(
         ["git", "-C", str(staging_dir), "tag", "-a", tag, "-m", f"MindSCADA Release {tag}"],
         check=True,
+        stdin=subprocess.DEVNULL,
     )
-    log_success(f"Tagged release assets with '{tag}'")
+    log_success(f"Tagged release repository with '{tag}'")
 
-    # 7. Push to Gitee
-    log_info(f"Pushing release assets and tag to Gitee ({args.repo_url})...")
-    subprocess.run(["git", "-C", str(staging_dir), "push", "origin", "master"], check=True)
-    subprocess.run(["git", "-C", str(staging_dir), "push", "origin", tag, "--force"], check=True)
-    log_success(f"Successfully pushed release assets to Gitee ({args.repo_url})!")
+    # 7. Push to Gitee git repository
+    log_info(f"Pushing release repository and tag to Gitee ({args.repo_url})...")
+    subprocess.run(["git", "-C", str(staging_dir), "push", "origin", "master"], check=True, stdin=subprocess.DEVNULL)
+    subprocess.run(["git", "-C", str(staging_dir), "push", "origin", tag, "--force"], check=True, stdin=subprocess.DEVNULL)
+    log_success(f"Successfully pushed release repository to Gitee ({args.repo_url})!")
+
+    # 8. Upload binary packages to Gitee Web Release via API (supports files up to 100MB)
+    gitee_token = os.environ.get("GITEE_TOKEN")
+    gitee_script = Path(__file__).parent / "gitee_release.py"
+    if gitee_token and gitee_script.is_file():
+        log_info("GITEE_TOKEN detected. Uploading binary packages to Gitee Release via API...")
+        try:
+            subprocess.run(
+                [sys.executable, str(gitee_script), "--token", gitee_token, "--tag", tag, "--dist-dir", str(dist_dir)],
+                check=True,
+                stdin=subprocess.DEVNULL,
+            )
+            log_success("All binary packages uploaded to Gitee Release successfully!")
+        except Exception as e:
+            log_warn(f"Failed to upload release assets to Gitee API: {e}")
+    else:
+        log_info("GITEE_TOKEN not set in local environment.")
+        log_info("[TIP] Gitee Web Release attachment uploads require a Personal Access Token.")
+        log_info("[TIP] To upload local binaries to Gitee Release, run:")
+        log_info(f"      set GITEE_TOKEN=<your_token> && python scripts/gitee_release.py --tag {tag}")
+        log_info("[INFO] GitHub Actions CI/CD will automatically compile and release to GitHub Releases.")
 
     print(banner)
-    log_success(f"All release assets published to Gitee successfully for tag {tag}!")
-    log_info(f"View Gitee repository: {args.repo_url.replace('.git', '')}")
-    log_info(f"View Gitee tag: {args.repo_url.replace('.git', '')}/tree/{tag}")
+    log_success(f"Release {tag} published to Gitee successfully!")
+    log_info(f"Gitee Repository : {args.repo_url.replace('.git', '')}")
+    log_info(f"Gitee Release    : {args.repo_url.replace('.git', '')}/releases")
     print(banner)
 
     return 0
+
 
 
 if __name__ == "__main__":
