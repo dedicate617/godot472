@@ -10,6 +10,12 @@
 #include <winsock2.h>
 #endif /* _WIN32 */
 
+class MQTTManager : public MqttManager {
+	GDCLASS(MQTTManager, MqttManager);
+protected:
+	static void _bind_methods() {}
+};
+
 static MqttManager *mqttmanager = nullptr;
 
 void initialize_mqttmanager_module(ModuleInitializationLevel p_level) {
@@ -30,6 +36,8 @@ void initialize_mqttmanager_module(ModuleInitializationLevel p_level) {
 	mqttmanager = memnew(MqttManager);
 	mqttmanager->init();
 	ClassDB::register_class<MqttManager>();
+	ClassDB::register_class<MQTTManager>();
+	ClassDB::add_compatibility_class("MQTTManager", "MqttManager");
 	Engine::get_singleton()->add_singleton(Engine::Singleton("g_Mqtt", MqttManager::get_singleton()));
 }
 

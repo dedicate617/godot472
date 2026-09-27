@@ -3,12 +3,18 @@ Import('env')
 import os
 
 module_env = env.Clone()
-module_env.add_source_files(env.modules_sources, "*.cpp")
-if env.get('tools', False):
-    env.add_source_files(env.modules_sources, "test/varmanager_test.cpp")
-# module_env.Append(CCFLAGS=['-O2'])
-# module_env.Append(CXXFLAGS=['-std=c++14'])
-module_env.Append(CPPDEFINES=["HAS_OPCUA"])
+if module_env["platform"] in ["web", "javascript"]:
+    print("[varmanager] Web platform detected, compiling web stubs.")
+    module_env.add_source_files(env.modules_sources, "register_types.cpp")
+    module_env.add_source_files(env.modules_sources, "varmanager_web.cpp")
+else:
+    module_env.add_source_files(env.modules_sources, "register_types.cpp")
+    module_env.add_source_files(env.modules_sources, "OpcUaGenericClientBrowseExt.cpp")
+    module_env.add_source_files(env.modules_sources, "uaclient.cpp")
+    module_env.add_source_files(env.modules_sources, "varmanager.cpp")
+    if env.get('tools', False):
+        env.add_source_files(env.modules_sources, "test/varmanager_test.cpp")
+    module_env.Append(CPPDEFINES=["HAS_OPCUA"])
 
 print("=======varmanager env info start===========")
 print(module_env["platform"])

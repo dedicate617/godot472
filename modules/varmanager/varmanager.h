@@ -5,6 +5,133 @@
 
 #pragma once
 
+#if defined(WEB_ENABLED) || defined(JAVASCRIPT_ENABLED)
+#include "core/object/class_db.h"
+#include "core/object/object.h"
+#include "core/variant/dictionary.h"
+#include "core/variant/variant.h"
+#include "core/templates/vector.h"
+#include "core/templates/hash_map.h"
+#include "modules/websocket/websocket_peer.h"
+
+class VarManager : public Object {
+	GDCLASS(VarManager, Object);
+
+protected:
+	static void _bind_methods();
+
+public:
+	enum UAStatusCode {
+		UNDEFINED,
+		ALL_OK,
+		CONNECTED,
+		DISCONNECTED,
+		WRONG_ID,
+		NO_NEW_DATA,
+		METHOD_BAD_CALL,
+		METHOD_INPUT_ARGUMENT_COUNT_MISMATCH,
+		ERROR_COMMUNICATION
+	};
+
+	enum ConnectAuthMode {
+		ANONYMOUS = 1,
+		USER_PASSWORD = 2,
+		CERTIFICATE = 4,
+		CERTIFICATE_PRIVATEKEY = 8,
+		MAXLENGTH
+	};
+
+	enum VarNotifyMode {
+		NONE,
+		SIGNAL,
+		CALL_DEFERRED,
+		MESSAGEQUEUE
+	};
+
+	enum TransferProtocol {
+		OPCUA,
+		MQTT
+	};
+
+	VarManager();
+	virtual ~VarManager();
+
+	static VarManager *get_singleton();
+	Error init();
+	void finish();
+	void poll();
+
+	void setConnectAuthMode(const int p_caMode);
+	String getMqRefreshKVVarPath();
+	void setUserPassword(const String &p_user, const String &p_password);
+	UAStatusCode connect_start(const String &p_address = "opc.tcp://127.0.0.1:4840", const String &p_objectPath = "Server", const bool p_activateUpcalls = true);
+	UAStatusCode connect_close();
+	int getStatus();
+	Variant getNodeId(const String &p_nodePath);
+	Array getChildrenOfPath(const String &p_nodePath);
+	Variant readValue(const String &p_variablePath);
+	Variant readNextValue(const String &p_variablePath);
+	Vector<Variant> readValues(const Vector<String> &p_variablePaths);
+	UAStatusCode readValueAsync(const String &p_variablePath);
+	UAStatusCode readValuesAsync(const Vector<String> &p_variablePaths);
+	UAStatusCode writeValue(const String &p_variablePath, const Variant p_value);
+	UAStatusCode writeValues(const Vector<String> &p_variablePaths, const Vector<Variant> p_values);
+	UAStatusCode writeValueAsync(const String &p_variablePath, const Variant p_value);
+	UAStatusCode writeValuesAsync(const Vector<String> &p_variablePaths, const Vector<Variant> p_values);
+	UAStatusCode invokeMethod(const String &p_nodePath, const Array &p_inputArguments, Array p_outputArguments);
+	UAStatusCode invokeMethodAsync(const String &p_nodePath, const Array &p_inputArguments, Array p_outputArguments = Array(), Variant p_cbObject = Variant(), const String &p_cbFuncName = "");
+
+	UAStatusCode subscribe(const String &p_variablePath);
+	UAStatusCode unSubscribe(const String &p_variablePath);
+
+	UAStatusCode subscribes(const Vector<String> &p_variablePaths, const String &p_aliasName);
+	UAStatusCode unSubscribes(const String &p_aliasName);
+
+	UAStatusCode subscribesById(const Vector<String> &p_variablePaths, const Variant &p_id);
+	UAStatusCode unSubscribesById(const Variant &p_id);
+
+	UAStatusCode commitSubscribesById(const String &p_aliasName);
+	UAStatusCode commitUnSubscribesById(const String &p_aliasName);
+
+	unsigned int subscribeEvent(const Vector<String> &p_eventSelections = Vector<String>(), const String &p_nodePath = "", Variant p_cbObject = Variant(), const String &p_cbFuncName = "");
+	UAStatusCode unSubscribeEvent(const unsigned int &p_eventId);
+
+	UAStatusCode readHistoryDataAsync(const String &p_variablePath, const Variant &p_startTime, const Variant &p_endTime, bool p_returnBounds = false, const int p_numValuesPerNode = 10);
+
+	void setReadTimeoutMs(int ms);
+	void setWriteTimeoutMs(int ms);
+	void setInvokeTimeoutMs(int ms);
+	void setRunPollIntervalMs(int ms);
+
+	bool setVarNotifyMode(VarNotifyMode p_mode = VarManager::VarNotifyMode::SIGNAL);
+	bool initClientCache(const String &p_cachePath = "");
+	bool initClientCacheAsync(const String &p_cachePath = "");
+	bool initClientCacheQueued(const String &p_cachePath = "");
+	bool initCacheRuntime(const String &p_cachePath = "");
+
+	bool setTransferProtocol(TransferProtocol p_mode = VarManager::TransferProtocol::OPCUA);
+	void setMqttConf(const Dictionary &p_mqttConfDict);
+	void setAutoRefreshVarKV(const bool &p_switch = true);
+
+private:
+	static VarManager *singleton;
+	Ref<WebSocketPeer> m_ws_peer;
+	HashMap<String, Variant> m_tag_cache;
+	Vector<String> m_subscribed_paths;
+	String m_server_address;
+	int m_status = 99;
+	bool m_handshake_sent = false;
+
+	void _handle_ws_message(const String &p_text);
+};
+
+VARIANT_ENUM_CAST(VarManager::UAStatusCode);
+VARIANT_ENUM_CAST(VarManager::VarNotifyMode);
+VARIANT_ENUM_CAST(VarManager::ConnectAuthMode);
+VARIANT_ENUM_CAST(VarManager::TransferProtocol);
+
+#else
+
 #ifdef _WIN32
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "iphlpapi.lib")
@@ -315,5 +442,7 @@ VARIANT_ENUM_CAST(VarManager::UAStatusCode);
 VARIANT_ENUM_CAST(VarManager::VarNotifyMode);
 VARIANT_ENUM_CAST(VarManager::ConnectAuthMode);
 VARIANT_ENUM_CAST(VarManager::TransferProtocol);
+
+#endif // !defined(WEB_ENABLED) && !defined(JAVASCRIPT_ENABLED)
 
 #endif // VARMANGER_H

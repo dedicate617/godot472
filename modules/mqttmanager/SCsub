@@ -3,7 +3,14 @@ Import('env')
 import os
 
 module_env = env.Clone()
-module_env.add_source_files(env.modules_sources, "*.cpp")
+if module_env["platform"] in ["web", "javascript"]:
+    print("[mqttmanager] Web platform detected, compiling web stubs.")
+    module_env.add_source_files(env.modules_sources, "register_types.cpp")
+    module_env.add_source_files(env.modules_sources, "mqttmanager_web.cpp")
+else:
+    module_env.add_source_files(env.modules_sources, "register_types.cpp")
+    module_env.add_source_files(env.modules_sources, "mqttclient.cpp")
+    module_env.add_source_files(env.modules_sources, "mqttmanager.cpp")
 # module_env.Append(CCFLAGS=['-O2'])
 # module_env.Append(CXXFLAGS=['-std=c++14'])
 # module_env.Append(CPPDEFINES=["HAS_OPCUA"])

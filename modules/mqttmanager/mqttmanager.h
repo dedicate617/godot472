@@ -5,6 +5,83 @@
 
 #pragma once
 
+#if defined(WEB_ENABLED) || defined(JAVASCRIPT_ENABLED)
+#include "core/variant/variant.h"
+#include "core/object/class_db.h"
+#include "core/object/object.h"
+#include "core/variant/dictionary.h"
+#include "mqttTransferInterface.h"
+#include "modules/websocket/websocket_peer.h"
+
+class MqttManager : public MqttTransferInterface {
+	GDCLASS(MqttManager, MqttTransferInterface);
+
+protected:
+	static void _bind_methods();
+
+public:
+	enum QOS {
+		QOS0 = 0,
+		QOS1 = 1,
+		QOS2 = 2,
+	};
+
+	MqttManager();
+	virtual ~MqttManager();
+
+	void connect_signals();
+
+	virtual Error init(const String &p_prjPath = "") override;
+	virtual Error init_bydict(const Dictionary &p_mqttConfDict) override;
+
+	virtual bool connect_start(const String &p_host = "", const int p_port = 1883, const String &p_clientId = "") override;
+	virtual bool connect_reqrsp_start(const String &p_host = "", const int p_port = 1883, const String &p_clientId = "") override;
+
+	bool subscribe(const String &p_topic, MqttManager::QOS p_qos = MqttManager::QOS::QOS0);
+	virtual bool subscribe1(const String &p_topic, const int &p_qos = 0) override;
+
+	bool autoReSubscribe();
+	bool unsubscribe(const String &p_topic);
+
+	bool publish(const String &p_topic, const String &p_msg, MqttManager::QOS p_qos = MqttManager::QOS::QOS0);
+
+	String req_rsp(const String &p_reqtopic, const String &p_reqmsg, const String &p_rsptopic, const String &p_remoteClientId, MqttManager::QOS p_qos = MqttManager::QOS::QOS2, int p_secs_timeout = 5, bool p_auto_mode = true);
+	virtual String req_rsp1(const String &p_reqtopic, const String &p_reqmsg, const String &p_rsptopic, const String &p_remoteClientId, int p_qos = 2, int p_secs_timeout = 5, bool p_auto_mode = true) override;
+
+	bool connect_close();
+
+	static MqttManager *get_singleton();
+	void finish();
+
+	void onMqttConnected();
+	void onMqttLostconnect();
+	void onMqttDisconnected();
+	void onMqttMsgReceived(const String &topic, const String &msg, const int qos);
+
+	virtual Error invokeMethod(const String &p_nodePath, const Array &p_inputArguments, Array p_outputArguments, const String &p_remoteClientId) override;
+
+	void poll();
+
+private:
+	static MqttManager *singleton;
+	Ref<WebSocketPeer> m_ws_peer;
+	String m_host;
+	int m_port = 1883;
+	String m_clientId;
+	int m_connSts = 0;
+	bool m_handshake_sent = false;
+	uint16_t m_packet_id = 1;
+	Vector<String> m_subscribed_topics;
+	Vector<int> m_subscribed_qos;
+
+	void _send_mqtt_connect();
+	void _handle_mqtt_packet(const uint8_t *data, int len);
+};
+
+VARIANT_ENUM_CAST(MqttManager::QOS);
+
+#else
+
 #ifdef _WIN32
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "iphlpapi.lib")
@@ -176,5 +253,7 @@ private:
 };
 
 VARIANT_ENUM_CAST(MqttManager::QOS);
+
+#endif // !defined(WEB_ENABLED) && !defined(JAVASCRIPT_ENABLED)
 
 #endif // MQTTMANGER_H
