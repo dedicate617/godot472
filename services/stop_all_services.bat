@@ -6,14 +6,14 @@ echo        Stopping MindSCADA Backend Services...
 echo ========================================================
 echo.
 
-echo Stopping MindSCADASvc...
-taskkill /F /IM MindSCADASvc.windows.opt.64.exe 2>nul
-
-echo Stopping scada_tunnel.exe...
+echo Stopping standalone service executables...
+taskkill /F /IM dev_server.exe 2>nul
+taskkill /F /IM scada_ws_gateway.exe 2>nul
+taskkill /F /IM scada_stream_gateway.exe 2>nul
+taskkill /F /IM run_mindscada_svc.exe 2>nul
 taskkill /F /IM scada_tunnel.exe 2>nul
-
-echo Stopping nanomq.exe...
 taskkill /F /IM nanomq.exe 2>nul
+taskkill /F /IM MindSCADASvc.windows.opt.64.exe 2>nul
 
 echo Stopping port listeners (4840, 8088, 8090, 8095)...
 for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":4840" ^| findstr "LISTENING"') do (

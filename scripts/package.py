@@ -731,6 +731,7 @@ def collect_web_templates(
 def collect_web_bundle(
     bin_dir: Path,
     version: str,
+    repo_root: Optional[Path] = None,
 ) -> PackagePlan:
     """Collect standalone Web application assets (.web_zip) into ready-to-deploy archive."""
     archive_name = f"MindSCADA_v{version}_Web_bundle.zip"
@@ -747,15 +748,40 @@ def collect_web_bundle(
     has_mindscada = any(f.name.startswith("mindscada.") for f in web_zip_dir.iterdir() if f.is_file())
     prefix_filter = "mindscada." if has_mindscada else "godot."
 
-    extra_web_files = {"dev_server.py", "start_web_server.bat", "favicon.ico", "index.html"}
+    extra_web_files = {"dev_server.py", "dev_server.exe", "start_web_server.bat", "favicon.ico", "index.html"}
+    added_names = set()
     for f in sorted(web_zip_dir.iterdir()):
         if f.is_file() and (f.name.startswith(prefix_filter) or f.name in extra_web_files):
             plan.items.append(
                 ArchiveItem(
                     arcname=f.name,
                     source_file=f,
-                    is_executable=f.suffix.lower() == ".bat",
+                    is_executable=f.suffix.lower() in (".bat", ".exe"),
                     description=f"Web Bundle Asset ({f.name})",
+                )
+            )
+            added_names.add(f.name)
+
+    # If repo_root is provided, supplement with standalone dev_server.exe and launcher if missing in .web_zip
+    if repo_root:
+        services_bin_dev = repo_root / "services" / "bin" / "dev_server.exe"
+        if services_bin_dev.is_file() and "dev_server.exe" not in added_names:
+            plan.items.append(
+                ArchiveItem(
+                    arcname="dev_server.exe",
+                    source_file=services_bin_dev,
+                    is_executable=True,
+                    description=f"Web Bundle Standalone DevServer ({services_bin_dev.name})",
+                )
+            )
+        services_start_bat = repo_root / "services" / "start_web_server.bat"
+        if services_start_bat.is_file() and "start_web_server.bat" not in added_names:
+            plan.items.append(
+                ArchiveItem(
+                    arcname="start_web_server.bat",
+                    source_file=services_start_bat,
+                    is_executable=True,
+                    description=f"Web Bundle Launcher ({services_start_bat.name})",
                 )
             )
     return plan
@@ -777,7 +803,7 @@ def collect_services_package(
         plan.missing_required.append("services directory")
         return plan
 
-    # 1. Binary daemons (bin/nanomq.exe, bin/libwinpthread-1.dll, bin/scada_tunnel.exe)
+    # 1. Binary daemons (bin/nanomq.exe, bin/libwinpthread-1.dll, bin/scada_tunnel.exe, bin/*.exe)
     bin_dir = services_dir / "bin"
     if bin_dir.is_dir():
         for b in sorted(bin_dir.iterdir()):
@@ -804,7 +830,7 @@ def collect_services_package(
             )
 
     # 3. Root launchers and docs
-    for launcher in ("start_all_services.bat", "stop_all_services.bat", "README.md"):
+    for launcher in ("start_all_services.bat", "stop_all_services.bat", "start_web_server.bat", "README.md"):
         src = services_dir / launcher
         if src.is_file():
             plan.items.append(
@@ -1052,7 +1078,7 @@ def run_packaging(args: argparse.Namespace) -> int:
         plans.append(collect_pi64_templates(bin_dir, version))
     if selected_platform in ("all", "web"):
         plans.append(collect_web_templates(bin_dir, version))
-        web_bundle_plan = collect_web_bundle(bin_dir, version)
+        web_bundle_plan = collect_web_bundle(bin_dir, version, repo_root)
         if web_bundle_plan.items:
             plans.append(web_bundle_plan)
     if selected_platform in ("all", "services"):

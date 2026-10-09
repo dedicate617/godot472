@@ -20,6 +20,7 @@ logs/
 *.log
 .cache/
 dist/
+build_nuitka/
 .superpowers/
 
 # Allow precompiled vendor libraries in modules and deps
@@ -30,6 +31,11 @@ dist/
 !services/bin/*.exe
 !services/bin/*.dll
 !tools/scada_tunnel/*.exe
+# Ignore generated Nuitka binaries from git tracking (packaged into dist/ releases)
+services/bin/dev_server.exe
+services/bin/run_mindscada_svc.exe
+services/bin/scada_stream_gateway.exe
+services/bin/scada_ws_gateway.exe
 
 # Secrets and tokens
 .gitee_token
