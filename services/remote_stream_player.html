@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>MindSCADA Web Remote Stream - Sunshine HMI</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #11141a;
+      color: #e2e8f0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    #container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    #topbar {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 44px;
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(8px);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      z-index: 100;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      background: rgba(255, 255, 255, 0.08);
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #94a3b8;
+    }
+    .dot.connected { background: #10b981; box-shadow: 0 0 8px #10b981; }
+    .dot.connecting { background: #f59e0b; }
+    .dot.error { background: #ef4444; }
+    #stats {
+      font-family: monospace;
+      font-size: 12px;
+      color: #38bdf8;
+    }
+    #canvas-wrap {
+      position: relative;
+      width: 100%;
+      height: calc(100% - 44px);
+      margin-top: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #000;
+    }
+    #stream-canvas {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      cursor: crosshair;
+      box-shadow: 0 0 30px rgba(0,0,0,0.8);
+      outline: none;
+    }
+    #overlay-msg {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 18px;
+      color: #94a3b8;
+      text-align: center;
+      pointer-events: none;
+    }
+    .btn {
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: background 0.15s;
+    }
+    .btn:hover { background: #1d4ed8; }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <div id="topbar">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span style="font-weight: 600; font-size: 14px;">MindSCADA Remote Stream</span>
+        <div class="badge">
+          <span id="status-dot" class="dot"></span>
+          <span id="status-text">未连接</span>
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 16px;">
+        <span id="stats">FPS: -- | 延迟: -- ms | 分辨率: --</span>
+        <button class="btn" id="btn-fullscreen">全屏</button>
+      </div>
+    </div>
+
+    <div id="canvas-wrap">
+      <canvas id="stream-canvas" tabindex="0" width="1280" height="720"></canvas>
+      <div id="overlay-msg">正在等待远端视频流...</div>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("stream-canvas");
+    const ctx = canvas.getContext("2d", { alpha: false });
+    const statusDot = document.getElementById("status-dot");
+    const statusText = document.getElementById("status-text");
+    const statsEl = document.getElementById("stats");
+    const overlayMsg = document.getElementById("overlay-msg");
+    const btnFullscreen = document.getElementById("btn-fullscreen");
+
+    let streamWidth = 1280;
+    let streamHeight = 720;
+    let ws = null;
+    let frameCount = 0;
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const isEmbedded = urlParams.get("embedded") === "1" || urlParams.get("clean") === "1";
+    let debugVisible = !isEmbedded;
+
+    function updateDebugUI() {
+      const topbar = document.getElementById("topbar");
+      const canvasWrap = document.getElementById("canvas-wrap");
+      if (debugVisible) {
+        topbar.style.display = "flex";
+        canvasWrap.style.marginTop = "44px";
+        canvasWrap.style.height = "calc(100% - 44px)";
+      } else {
+        topbar.style.display = "none";
+        canvasWrap.style.marginTop = "0px";
+        canvasWrap.style.height = "100%";
+      }
+    }
+
+    function showToast(msg) {
+      let toast = document.getElementById("debug-toast");
+      if (!toast) {
+        toast = document.createElement("div");
+        toast.id = "debug-toast";
+        toast.style.cssText = "position:fixed; bottom:16px; right:16px; background:rgba(15,23,42,0.88); backdrop-filter:blur(6px); color:#38bdf8; border:1px solid rgba(56,189,248,0.4); padding:6px 14px; border-radius:6px; font-size:12px; font-family:sans-serif; z-index:99999; box-shadow:0 4px 12px rgba(0,0,0,0.5); transition:opacity 0.3s; pointer-events:none;";
+        document.body.appendChild(toast);
+      }
+      toast.innerText = msg;
+      toast.style.opacity = "1";
+      toast.style.display = "block";
+      clearTimeout(toast._timer);
+      toast._timer = setTimeout(() => {
+        toast.style.opacity = "0";
+        setTimeout(() => { toast.style.display = "none"; }, 300);
+      }, 1500);
+    }
+
+    function toggleDebug() {
+      debugVisible = !debugVisible;
+      updateDebugUI();
+      showToast(debugVisible ? "调试模式: 已开启 (FPS / 延迟 / 分辨率)" : "调试模式: 已关闭");
+    }
+
+    if (isEmbedded) {
+      document.body.style.background = "#efefef";
+      document.getElementById("container").style.background = "#efefef";
+      document.getElementById("canvas-wrap").style.background = "#efefef";
+      canvas.style.boxShadow = "none";
+      canvas.style.cursor = "default";
+      canvas.style.width = "100%";
+      canvas.style.height = "100%";
+      canvas.style.maxWidth = "100%";
+      canvas.style.maxHeight = "100%";
+      canvas.style.objectFit = "fill";
+    }
+    updateDebugUI();
+
+    window.addEventListener("message", (e) => {
+      if (e.data && e.data.type === "toggleDebug") {
+        toggleDebug();
+      }
+    });
+    let lastStatsTime = performance.now();
+    let currentFps = 0;
+    let lastFrameTime = performance.now();
+    let rttMs = 0;
+
+    function connect() {
+      statusDot.className = "dot connecting";
+      statusText.textContent = "正在连接网关...";
+      overlayMsg.textContent = "正在建立 WebSocket 串流会话...";
+
+      const proto = location.protocol === "https:" ? "wss:" : "ws:";
+      const targetPort = urlParams.get("port") || "8095";
+      const targetHost = (location.hostname || "127.0.0.1") + ":" + targetPort;
+      const wsUrl = `${proto}//${targetHost}/stream/ws${location.search || ""}`;
+
+      ws = new WebSocket(wsUrl);
+      ws.binaryType = "blob";
+
+      ws.onopen = () => {
+        statusDot.className = "dot connected";
+        statusText.textContent = "已连接串流通道";
+        overlayMsg.textContent = "正在等待首帧图像...";
+      };
+
+      ws.onclose = () => {
+        statusDot.className = "dot error";
+        statusText.textContent = "连接断开 (3秒后重试)";
+        overlayMsg.textContent = "与串流网关断开连接，准备重连...";
+        setTimeout(connect, 3000);
+      };
+
+      ws.onerror = (e) => {
+        console.error("WebSocket error:", e);
+      };
+
+      ws.onmessage = async (event) => {
+        if (typeof event.data === "string") {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === "meta") {
+              if (msg.source) statusText.textContent = "已连接 " + msg.source;
+              streamWidth = msg.width || streamWidth;
+              streamHeight = msg.height || streamHeight;
+              if (canvas.width !== streamWidth || canvas.height !== streamHeight) {
+                canvas.width = streamWidth;
+                canvas.height = streamHeight;
+              }
+            } else if (msg.type === "pong") {
+              rttMs = Math.round(performance.now() - msg.t);
+            }
+          } catch(e){}
+        } else if (event.data instanceof Blob) {
+          overlayMsg.style.display = "none";
+          frameCount++;
+          const now = performance.now();
+          if (now - lastStatsTime >= 1000) {
+            currentFps = Math.round((frameCount * 1000) / (now - lastStatsTime));
+            frameCount = 0;
+            lastStatsTime = now;
+            statsEl.textContent = `FPS: ${currentFps} | 延迟: ${rttMs} ms | 分辨率: ${streamWidth}x${streamHeight}`;
+          }
+
+          createImageBitmap(event.data).then(bitmap => {
+            if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+              canvas.width = bitmap.width;
+              canvas.height = bitmap.height;
+              streamWidth = bitmap.width;
+              streamHeight = bitmap.height;
+            }
+            ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+            bitmap.close();
+          }).catch(err => {
+            console.error("Frame decode error:", err);
+          });
+        }
+      };
+    }
+
+    // Ping loop for RTT
+    setInterval(() => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "ping", t: performance.now() }));
+      }
+    }, 1000);
+
+    // ── Mouse & Touch Events ──────────────────────────────────────────
+    function getNormalizedCoords(e) {
+      const rect = canvas.getBoundingClientRect();
+      const x = Math.max(0, Math.min(streamWidth - 1, Math.round((e.clientX - rect.left) * (streamWidth / rect.width))));
+      const y = Math.max(0, Math.min(streamHeight - 1, Math.round((e.clientY - rect.top) * (streamHeight / rect.height))));
+      return { x, y };
+    }
+
+    let lastMoveTime = 0;
+    canvas.addEventListener("pointermove", (e) => {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      const now = performance.now();
+      if (now - lastMoveTime < 16) return; // limit to ~60Hz
+      lastMoveTime = now;
+      const pos = getNormalizedCoords(e);
+      ws.send(JSON.stringify({
+        type: "mouse_move",
+        x: pos.x,
+        y: pos.y
+      }));
+    });
+
+    canvas.addEventListener("pointerdown", (e) => {
+      canvas.focus();
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      canvas.setPointerCapture(e.pointerId);
+      const pos = getNormalizedCoords(e);
+      let btn = 1; // left
+      if (e.button === 2) btn = 2; // right
+      else if (e.button === 1) btn = 3; // middle
+      ws.send(JSON.stringify({ type: "focus", focus: true }));
+      ws.send(JSON.stringify({
+        type: "mouse_btn",
+        x: pos.x,
+        y: pos.y,
+        btn: btn,
+        pressed: 1
+      }));
+    });
+
+    canvas.addEventListener("pointerup", (e) => {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      try { canvas.releasePointerCapture(e.pointerId); } catch(err){}
+      const pos = getNormalizedCoords(e);
+      let btn = 1;
+      if (e.button === 2) btn = 2;
+      else if (e.button === 1) btn = 3;
+      ws.send(JSON.stringify({
+        type: "mouse_btn",
+        x: pos.x,
+        y: pos.y,
+        btn: btn,
+        pressed: 0
+      }));
+    });
+
+    canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+
+    canvas.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      const pos = getNormalizedCoords(e);
+      const btn = e.deltaY < 0 ? 4 : 5; // 4=wheel_up, 5=wheel_down
+      ws.send(JSON.stringify({
+        type: "mouse_wheel",
+        x: pos.x,
+        y: pos.y,
+        btn: btn,
+        pressed: 1
+      }));
+    }, { passive: false });
+
+    // ── Keyboard Events ───────────────────────────────────────────────
+    window.addEventListener("keydown", (e) => {
+      // Toggle debug with Ctrl + Alt + Shift + D
+      if (e.ctrlKey && e.altKey && e.shiftKey && (e.key === "D" || e.key === "d" || e.code === "KeyD")) {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleDebug();
+        return;
+      }
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      // Filter out F11 or common dev keys
+      if (e.key === "F12" || e.key === "F11") return;
+      e.preventDefault();
+      ws.send(JSON.stringify({
+        type: "key",
+        keycode: e.keyCode,
+        unicode: e.key.length === 1 ? e.key.charCodeAt(0) : 0,
+        pressed: 1
+      }));
+    });
+
+    window.addEventListener("keyup", (e) => {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      if (e.key === "F12" || e.key === "F11") return;
+      e.preventDefault();
+      ws.send(JSON.stringify({
+        type: "key",
+        keycode: e.keyCode,
+        unicode: e.key.length === 1 ? e.key.charCodeAt(0) : 0,
+        pressed: 0
+      }));
+    });
+
+    btnFullscreen.addEventListener("click", () => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => console.log(err));
+      } else {
+        document.exitFullscreen();
+      }
+    });
+
+    // Start connection
+    connect();
+  </script>
+</body>
+</html>
