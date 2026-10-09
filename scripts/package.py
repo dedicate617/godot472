@@ -747,16 +747,75 @@ def collect_web_bundle(
     has_mindscada = any(f.name.startswith("mindscada.") for f in web_zip_dir.iterdir() if f.is_file())
     prefix_filter = "mindscada." if has_mindscada else "godot."
 
+    extra_web_files = {"dev_server.py", "start_web_server.bat", "favicon.ico", "index.html"}
     for f in sorted(web_zip_dir.iterdir()):
-        if f.is_file() and f.name.startswith(prefix_filter):
+        if f.is_file() and (f.name.startswith(prefix_filter) or f.name in extra_web_files):
             plan.items.append(
                 ArchiveItem(
                     arcname=f.name,
                     source_file=f,
-                    is_executable=False,
+                    is_executable=f.suffix.lower() == ".bat",
                     description=f"Web Bundle Asset ({f.name})",
                 )
             )
+    return plan
+
+
+def collect_services_package(
+    repo_root: Path,
+    version: str,
+) -> PackagePlan:
+    """Collect MindSCADA Backend Services and one-key launcher into distribution package."""
+    archive_name = f"MindSCADA_v{version}_services_windows.zip"
+    plan = PackagePlan(
+        name="Backend Services (Windows)",
+        platform_key="services",
+        archive_filename=archive_name,
+    )
+    services_dir = repo_root / "services"
+    if not services_dir.is_dir():
+        plan.missing_required.append("services directory")
+        return plan
+
+    # 1. Binary daemons (bin/nanomq.exe, bin/libwinpthread-1.dll, bin/scada_tunnel.exe)
+    bin_dir = services_dir / "bin"
+    if bin_dir.is_dir():
+        for b in sorted(bin_dir.iterdir()):
+            if b.is_file():
+                plan.items.append(
+                    ArchiveItem(
+                        arcname=f"bin/{b.name}",
+                        source_file=b,
+                        is_executable=b.suffix.lower() == ".exe",
+                        description=f"Service Daemon Binary ({b.name})",
+                    )
+                )
+
+    # 2. Service scripts and support components
+    for sf in sorted(services_dir.iterdir()):
+        if sf.is_file() and sf.suffix.lower() in (".py", ".html", ".md", ".json"):
+            plan.items.append(
+                ArchiveItem(
+                    arcname=f"services/{sf.name}",
+                    source_file=sf,
+                    is_executable=False,
+                    description=f"Backend Service Component ({sf.name})",
+                )
+            )
+
+    # 3. Root launchers and docs
+    for launcher in ("start_all_services.bat", "stop_all_services.bat", "README.md"):
+        src = services_dir / launcher
+        if src.is_file():
+            plan.items.append(
+                ArchiveItem(
+                    arcname=launcher,
+                    source_file=src,
+                    is_executable=launcher.endswith(".bat"),
+                    description=f"Service One-Key Controller ({launcher})",
+                )
+            )
+
     return plan
 
 
@@ -939,9 +998,9 @@ Examples:
     )
     parser.add_argument(
         "--platform",
-        choices=["all", "windows", "pi32", "pi64", "web"],
+        choices=["all", "windows", "pi32", "pi64", "web", "services"],
         default="all",
-        help="Target packaging scope: 'all', 'windows', 'pi32', 'pi64', or 'web' (default: 'all')",
+        help="Target packaging scope: 'all', 'windows', 'pi32', 'pi64', 'web', or 'services' (default: 'all')",
     )
     parser.add_argument(
         "--dry-run",
@@ -996,6 +1055,10 @@ def run_packaging(args: argparse.Namespace) -> int:
         web_bundle_plan = collect_web_bundle(bin_dir, version)
         if web_bundle_plan.items:
             plans.append(web_bundle_plan)
+    if selected_platform in ("all", "services"):
+        services_plan = collect_services_package(repo_root, version)
+        if services_plan.items:
+            plans.append(services_plan)
 
     # Evaluate viability of plans
     viable_plans: List[PackagePlan] = []

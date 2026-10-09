@@ -92,7 +92,7 @@ def curl_api(endpoint: str, method: str = "GET", data: Optional[Dict] = None, to
     cmd.append(url)
 
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
         output = proc.stdout.strip()
         lines = output.rsplit("\n", 1)
         http_code = int(lines[1]) if len(lines) > 1 and lines[1].isdigit() else (200 if proc.returncode == 0 else 500)
@@ -172,23 +172,23 @@ def upload_asset(repo: str, release_id: int, file_path: Path, token: str) -> boo
     # Prefer system curl if available: streams from disk and bypasses proxy with direct IP
     curl_bin = shutil.which("curl") or shutil.which("curl.exe")
     if curl_bin:
-        curl_cmd = [
-            curl_bin,
-            "--resolve", "gitee.com:443:180.76.198.77",
-            "--noproxy", "*",
-            "-s",
-            "-F", f"file=@{file_arg}",
-            url,
-        ]
-        try:
-            proc = subprocess.run(curl_cmd, capture_output=True, text=True, timeout=1200)
-            if proc.returncode == 0 and ('"browser_download_url"' in proc.stdout or '"url"' in proc.stdout):
-                log_success(f"Asset uploaded successfully: {file_path.name}")
-                return True
-            else:
-                log_warn(f"curl upload failed with code {proc.returncode}: {proc.stdout[:200] or proc.stderr[:200]}")
-        except Exception as e:
-            log_warn(f"curl invocation exception: {e}")
+        for attempt, extra_args in enumerate([
+            ["--resolve", "gitee.com:443:180.76.198.77", "--noproxy", "*"],
+            [],
+        ]):
+            curl_cmd = [curl_bin] + extra_args + ["-s", "-F", f"file=@{file_arg}", url]
+            try:
+                proc = subprocess.run(curl_cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=1200)
+                if proc.returncode == 0 and ('"browser_download_url"' in proc.stdout or '"url"' in proc.stdout):
+                    log_success(f"Asset uploaded successfully: {file_path.name}")
+                    return True
+                elif "已超出仓库附件限额" in proc.stdout or "quota" in proc.stdout.lower():
+                    log_warn(f"Gitee repository attachment quota exceeded (1 GB limit): {proc.stdout[:150]}")
+                    return False
+                else:
+                    log_warn(f"curl upload attempt {attempt+1} failed with code {proc.returncode}: {proc.stdout[:200] or proc.stderr[:200]}")
+            except Exception as e:
+                log_warn(f"curl invocation exception attempt {attempt+1}: {e}")
 
     # Fallback to urllib
     fields = {"access_token": token}
@@ -300,7 +300,7 @@ def main() -> int:
     desc = args.body or f"MindSCADA Industrial Engine Release {tag}\n\nBuilt with MindSCADA custom modules and patches."
 
     dist_path = Path(args.dist_dir).resolve()
-    assets = collect_dist_files(dist_path)
+    assets = sorted(collect_dist_files(dist_path), key=lambda f: f.stat().st_size)
 
     banner = "=" * 70
     print(banner)

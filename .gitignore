@@ -27,6 +27,9 @@ dist/
 !deps/**/*.lib
 !deps/**/*.a
 !deps/**/*.so
+!services/bin/*.exe
+!services/bin/*.dll
+!tools/scada_tunnel/*.exe
 
 # Secrets and tokens
 .gitee_token
