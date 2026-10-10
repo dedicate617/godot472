@@ -830,7 +830,7 @@ def collect_services_package(
             )
 
     # 3. Root launchers and docs
-    for launcher in ("start_all_services.bat", "stop_all_services.bat", "start_web_server.bat", "README.md"):
+    for launcher in ("start_all_services.bat", "stop_all_services.bat", "start_web_server.bat", "start_daemon_tray.bat", "README.md"):
         src = services_dir / launcher
         if src.is_file():
             plan.items.append(

@@ -36,6 +36,7 @@ services/bin/dev_server.exe
 services/bin/run_mindscada_svc.exe
 services/bin/scada_stream_gateway.exe
 services/bin/scada_ws_gateway.exe
+services/bin/scada_daemon_tray.exe
 
 # Secrets and tokens
 .gitee_token
