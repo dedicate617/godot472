@@ -845,6 +845,215 @@ def collect_services_package(
     return plan
 
 
+def collect_services_linux_package(
+    repo_root: Path,
+    version: str,
+) -> PackagePlan:
+    """Collect MindSCADA Linux/Raspberry Pi backend services, daemon supervisor, and launchers."""
+    archive_name = f"MindSCADA_v{version}_services_linux_pi.zip"
+    plan = PackagePlan(
+        name="Backend Services (Linux & Raspberry Pi)",
+        platform_key="services_linux",
+        archive_filename=archive_name,
+    )
+    services_dir = repo_root / "services"
+    if not services_dir.is_dir():
+        plan.missing_required.append("services directory")
+        return plan
+
+    # 1. Service Python scripts and support components
+    for sf in sorted(services_dir.iterdir()):
+        if sf.is_file() and sf.suffix.lower() in (".py", ".html", ".md", ".json"):
+            is_exec = sf.name in ("scada_daemon.py", "run_mindscada_svc.py")
+            plan.items.append(
+                ArchiveItem(
+                    arcname=f"services/{sf.name}",
+                    source_file=sf,
+                    is_executable=is_exec,
+                    description=f"Backend Service Component ({sf.name})",
+                )
+            )
+
+    # 2. Service shell scripts
+    for sf in sorted(services_dir.iterdir()):
+        if sf.is_file() and sf.suffix.lower() == ".sh":
+            plan.items.append(
+                ArchiveItem(
+                    arcname=f"services/{sf.name}",
+                    source_file=sf,
+                    is_executable=True,
+                    description=f"Service Shell Script ({sf.name})",
+                )
+            )
+
+    # 3. Systemd service integration
+    systemd_dir = services_dir / "systemd"
+    if systemd_dir.is_dir():
+        for sf in sorted(systemd_dir.iterdir()):
+            if sf.is_file():
+                plan.items.append(
+                    ArchiveItem(
+                        arcname=f"services/systemd/{sf.name}",
+                        source_file=sf,
+                        is_executable=sf.suffix.lower() == ".sh",
+                        description=f"Systemd Service Integration ({sf.name})",
+                    )
+                )
+
+    # 4. Root level Linux launchers
+    root_launchers = [
+        "start_all_services.sh",
+        "stop_all_services.sh",
+        "status_services.sh",
+        "start_daemon.sh",
+        "start_mindscada_pi.sh",
+    ]
+    for launcher in root_launchers:
+        src = repo_root / launcher
+        if src.is_file():
+            plan.items.append(
+                ArchiveItem(
+                    arcname=launcher,
+                    source_file=src,
+                    is_executable=True,
+                    description=f"Root Service Launcher ({launcher})",
+                )
+            )
+
+    # 5. Root README for Linux/Pi
+    pi_readme = services_dir / "README_LINUX_PI.md"
+    if pi_readme.is_file():
+        plan.items.append(
+            ArchiveItem(
+                arcname="README.md",
+                source_file=pi_readme,
+                is_executable=False,
+                description="Linux & Raspberry Pi Quickstart Guide",
+            )
+        )
+
+    # 6. Tools: scada_tunnel source, Makefile, and build script for native compilation
+    tunnel_dir = repo_root / "tools" / "scada_tunnel"
+    if tunnel_dir.is_dir():
+        for tf in sorted(tunnel_dir.iterdir()):
+            if tf.is_file() and tf.name not in (".gitignore", "scada_tunnel.exe"):
+                plan.items.append(
+                    ArchiveItem(
+                        arcname=f"tools/scada_tunnel/{tf.name}",
+                        source_file=tf,
+                        is_executable=tf.suffix.lower() == ".sh",
+                        description=f"Tunnel Source Asset ({tf.name})",
+                    )
+                )
+
+    # 7. Built Linux ARM PCK packages (from scada4)
+    scada4_candidates = [
+        repo_root.parent / "luxiangyi472" / "scada4" / "build",
+        Path(r"C:\prj\luxiangyi472\scada4\build"),
+        repo_root / "build",
+    ]
+    scada4_build = None
+    for cand in scada4_candidates:
+        if cand.is_dir():
+            scada4_build = cand
+            break
+
+    if scada4_build:
+        for pck_name in ("client_arm32.pck", "client_arm64.pck"):
+            pck_file = scada4_build / pck_name
+            if pck_file.is_file():
+                plan.items.append(
+                    ArchiveItem(
+                        arcname=f"build/{pck_name}",
+                        source_file=pck_file,
+                        is_executable=False,
+                        description=f"MindSCADA Linux ARM Project Pack ({pck_name})",
+                    )
+                )
+
+    return plan
+
+
+def collect_pi_bundle(
+    bin_dir: Path,
+    version: str,
+    repo_root: Path,
+) -> PackagePlan:
+    """Collect standalone Raspberry Pi application bundle (Engine + PCK + Services + Launchers)."""
+    archive_name = f"MindSCADA_v{version}_pi32_bundle.zip"
+    plan = PackagePlan(
+        name="Raspberry Pi Standalone Bundle (ARM32)",
+        platform_key="pi32",
+        archive_filename=archive_name,
+    )
+
+    # 1. Locate ARM32 runtime binary
+    cand_arm32 = [
+        bin_dir / "MindSCADA.linuxbsd.template_release.arm32",
+        bin_dir / "godot.linuxbsd.template_release.arm32",
+        repo_root.parent / "godot.4.2.1" / "bin" / "MindSCADA.linuxbsd.template_release.arm32",
+        repo_root.parent / "godot.4.2.1" / "bin" / "godot.linuxbsd.template_release.arm32",
+    ]
+    engine_bin = None
+    for cand in cand_arm32:
+        if cand.is_file():
+            engine_bin = cand
+            break
+
+    if engine_bin:
+        plan.items.append(
+            ArchiveItem(
+                arcname="bin/MindSCADA.linuxbsd.template_release.arm32",
+                source_file=engine_bin,
+                is_executable=True,
+                description=f"Linux ARM32 Engine Runtime ({engine_bin.name})",
+            )
+        )
+    else:
+        plan.missing_optional.append("ARM32 Engine Binary")
+
+    # 2. Locate PCK
+    scada4_candidates = [
+        Path(r"C:\prj\luxiangyi472\scada4\build\client_arm32.pck"),
+        repo_root.parent / "luxiangyi472" / "scada4" / "build" / "client_arm32.pck",
+    ]
+    pck_file = None
+    for cand in scada4_candidates:
+        if cand.is_file():
+            pck_file = cand
+            break
+
+    if pck_file:
+        plan.items.append(
+            ArchiveItem(
+                arcname="client.pck",
+                source_file=pck_file,
+                is_executable=False,
+                description=f"MindSCADA Default Main Pack ({pck_file.name})",
+            )
+        )
+        plan.items.append(
+            ArchiveItem(
+                arcname="build/client_arm32.pck",
+                source_file=pck_file,
+                is_executable=False,
+                description=f"MindSCADA Linux ARM32 Pack ({pck_file.name})",
+            )
+        )
+
+    # 3. Incorporate all services, scripts, and launchers
+    services_plan = collect_services_linux_package(repo_root, version)
+    existing_arcs = {it.arcname for it in plan.items}
+    for it in services_plan.items:
+        if it.arcname not in existing_arcs:
+            plan.items.append(it)
+            existing_arcs.add(it.arcname)
+
+    return plan
+
+
+
+
 # ---------------------------------------------------------------------------
 # Archive Builder & Checksum Manifest Generator
 # ---------------------------------------------------------------------------
@@ -1024,9 +1233,9 @@ Examples:
     )
     parser.add_argument(
         "--platform",
-        choices=["all", "windows", "pi32", "pi64", "web", "services"],
+        choices=["all", "windows", "pi32", "pi64", "web", "services", "services_windows", "services_linux", "linux"],
         default="all",
-        help="Target packaging scope: 'all', 'windows', 'pi32', 'pi64', 'web', or 'services' (default: 'all')",
+        help="Target packaging scope: 'all', 'windows', 'pi32', 'pi64', 'web', 'linux', 'services', 'services_windows', or 'services_linux' (default: 'all')",
     )
     parser.add_argument(
         "--dry-run",
@@ -1072,19 +1281,26 @@ def run_packaging(args: argparse.Namespace) -> int:
     if selected_platform in ("all", "windows"):
         plans.append(collect_windows_editor(bin_dir, repo_root, version))
         plans.append(collect_windows_templates(bin_dir, version))
-    if selected_platform in ("all", "pi32"):
+    if selected_platform in ("all", "pi32", "linux"):
         plans.append(collect_pi32_templates(bin_dir, version))
-    if selected_platform in ("all", "pi64"):
+        pi_bundle_plan = collect_pi_bundle(bin_dir, version, repo_root)
+        if pi_bundle_plan.items:
+            plans.append(pi_bundle_plan)
+    if selected_platform in ("all", "pi64", "linux"):
         plans.append(collect_pi64_templates(bin_dir, version))
     if selected_platform in ("all", "web"):
         plans.append(collect_web_templates(bin_dir, version))
         web_bundle_plan = collect_web_bundle(bin_dir, version, repo_root)
         if web_bundle_plan.items:
             plans.append(web_bundle_plan)
-    if selected_platform in ("all", "services"):
+    if selected_platform in ("all", "services", "services_windows"):
         services_plan = collect_services_package(repo_root, version)
         if services_plan.items:
             plans.append(services_plan)
+    if selected_platform in ("all", "services", "services_linux", "linux", "pi32", "pi64"):
+        services_linux_plan = collect_services_linux_package(repo_root, version)
+        if services_linux_plan.items:
+            plans.append(services_linux_plan)
 
     # Evaluate viability of plans
     viable_plans: List[PackagePlan] = []
