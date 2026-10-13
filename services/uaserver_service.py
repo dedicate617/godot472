@@ -178,7 +178,8 @@ def main():
     g_window.add_method(idx, "restore", restoreWindow, [ua.VariantType.String], [ua.VariantType.Int32])
     g_window.add_method(idx, "callJsFunc", callJsFunc, [ua.VariantType.String, ua.VariantType.String, ua.VariantType.String], [ua.VariantType.String])
 
-    logger.info("Modules and methods configured.")
+    server.start()
+    logger.info("MindSCADA OPC-UA Server listening on opc.tcp://0.0.0.0:4840/")
 
     # 5. Populate variables from varconf
     tag_count = 0
@@ -212,9 +213,6 @@ def main():
             logger.info("Loaded %d tags into OPC-UA Server address space.", tag_count)
         except Exception as e:
             logger.warning("Failed to populate tags: %s", e)
-
-    server.start()
-    logger.info("MindSCADA OPC-UA Server listening on opc.tcp://0.0.0.0:4840/")
 
     try:
         while True:
