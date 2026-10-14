@@ -182,9 +182,9 @@ def upload_asset(repo: str, release_id: int, file_path: Path, token: str) -> boo
                 if proc.returncode == 0 and ('"browser_download_url"' in proc.stdout or '"url"' in proc.stdout):
                     log_success(f"Asset uploaded successfully: {file_path.name}")
                     return True
-                elif "已超出仓库附件限额" in proc.stdout or "quota" in proc.stdout.lower():
+                elif any(kw in proc.stdout for kw in ["1 GB", "限额", "quota", "超出"]):
                     log_warn(f"Gitee repository attachment quota exceeded (1 GB limit): {proc.stdout[:150]}")
-                    return False
+                    return "QUOTA_EXCEEDED"
                 else:
                     log_warn(f"curl upload attempt {attempt+1} failed with code {proc.returncode}: {proc.stdout[:200] or proc.stderr[:200]}")
             except Exception as e:
@@ -336,23 +336,30 @@ def main() -> int:
 
     success_count = 0
     fail_count = 0
+    quota_reached = False
     for a in assets:
         if a.name in existing_asset_names:
             log_info(f"Asset already attached to release, skipping: {a.name}")
             success_count += 1
             continue
-        ok = upload_asset(repo, release_id, a, token)
-        if ok:
+        res = upload_asset(repo, release_id, a, token)
+        if res is True:
             success_count += 1
+        elif res == "QUOTA_EXCEEDED":
+            quota_reached = True
+            log_warn("Halting further asset uploads because Gitee 1 GB repository attachment limit has been reached.")
+            break
         else:
             fail_count += 1
 
     print(banner)
     log_info(f"Gitee Release publishing completed: {success_count} succeeded, {fail_count} failed.")
+    if quota_reached:
+        log_warn("Note: Gitee free repository attachment quota (1 GB) is full. Assets are available on GitHub Releases.")
     log_info(f"View release at: https://gitee.com/{repo}/releases/tag/{tag}")
     print(banner)
 
-    return 0 if fail_count == 0 else 1
+    return 0 if (fail_count == 0 or quota_reached) else 1
 
 
 if __name__ == "__main__":
