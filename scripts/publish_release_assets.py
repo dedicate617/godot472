@@ -95,13 +95,25 @@ def get_asset_description(filename: str) -> str:
         return "Linux ARM32 (树莓派 32位系统) 导出模板"
     elif "export_templates_pi64.tpz" in fn:
         return "Linux ARM64 (树莓派 64位系统) 导出模板"
+    elif "pi32_bundle.zip" in fn:
+        return "Linux ARM32 嵌入式独立部署包 (完整系统运行时与后台服务)"
+    elif "services_windows.zip" in fn:
+        return "Windows 平台 SCADA 后台独立服务套件"
+    elif "services_linux_pi.zip" in fn:
+        return "Linux ARM 树莓派 SCADA 后台独立服务套件"
     elif "checksums.sha256" in fn:
         return "SHA256 资产校验和清单文件"
     return "MindSCADA 发行包资产"
 
 
-def generate_release_readme(tag: str, version: str, assets: List[Tuple[Path, str, float]]) -> str:
-    """Generate Markdown documentation for the release repository."""
+def generate_release_readme(
+    tag: str,
+    version: str,
+    assets: List[Tuple[Path, str, float]],
+    gitee_repo: str = "bosmutus/mind-scada-release",
+    github_repo: str = "dedicate617/godot472",
+) -> str:
+    """Generate Markdown documentation for the release repository with dual-source download guidance."""
     today = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     lines = [
         "# MindSCADA Engine - 编译产物发布仓库",
@@ -109,21 +121,41 @@ def generate_release_readme(tag: str, version: str, assets: List[Tuple[Path, str
         f"> **版本标签**：`{tag}`  ",
         f"> **引擎版本**：`Godot {version}` / `MindSCADA v{version}`  ",
         f"> **发布时间**：`{today}`  ",
+        f"> **双源托管**：[Gitee 发行版](https://gitee.com/{gitee_repo}/releases/tag/{tag}) | [GitHub Releases 镜像](https://github.com/{github_repo}/releases/tag/{tag})  ",
         "",
         "本项目专门用于托管 **MindSCADA 工业 SCADA/工控引擎** 的最终编译 Release 资产。本仓库仅包含各平台的预编译可执行文件、导出模板与部署归档，不包含引擎核心源码。",
         "",
         "---",
         "",
-        "## 包含的编译 Release 资产清单",
+        "## 🌐 双源托管与分发策略说明",
         "",
-        "| 文件名 | 文件大小 | SHA256 校验和 | 资产说明 |",
-        "| :--- | :--- | :--- | :--- |",
+        "1. **Gitee 国内高速源（单文件 ≤ 100MB）**：包含日常开发必备的桌面编辑器、WebAssembly 导出模板、后端微服务及校验清单，国内网络直连极速下载；",
+        "2. **GitHub Releases 全球源（全量包）**：包含全部平台产物与完整嵌入式固件部署镜像（如超大包 `MindSCADA_v4.7.2_pi32_bundle.zip` > 100MB），无单文件与存储限额；",
+        "3. **SHA256 安全校验**：双源归档文件完全一致，建议下载后通过系统自带工具校验：",
+        "   - Windows PowerShell: `Get-FileHash <文件路径> -Algorithm SHA256` 或 `certutil -hashfile <文件路径> SHA256`",
+        "   - Linux / macOS: `sha256sum <文件路径>`",
+        "",
+        "---",
+        "",
+        "## 📦 编译 Release 资产清单与双源下载",
+        "",
+        "| 资产文件名 | 文件大小 | Gitee 直连下载 | GitHub 官方镜像 | SHA256 校验和 (前16位) | 资产说明 |",
+        "| :--- | :--- | :--- | :--- | :--- | :--- |",
     ]
 
     for path, sha256_hash, size_mb in assets:
         short_hash = sha256_hash[:16] + "..."
         desc = get_asset_description(path.name)
-        lines.append(f"| `{path.name}` | {size_mb:.2f} MB | `{short_hash}` | {desc} |")
+        github_url = f"https://github.com/{github_repo}/releases/download/{tag}/{path.name}"
+        github_link = f"[GitHub 镜像]({github_url})"
+
+        if size_mb < 95.0:
+            gitee_url = f"https://gitee.com/{gitee_repo}/releases/download/{tag}/{path.name}"
+            gitee_link = f"[Gitee 直链]({gitee_url})"
+        else:
+            gitee_link = "*(超 100MB 限制，由 GitHub 托管)*"
+
+        lines.append(f"| `{path.name}` | {size_mb:.2f} MB | {gitee_link} | {github_link} | `{short_hash}` | {desc} |")
 
     lines.extend([
         "",
@@ -192,6 +224,18 @@ def main() -> int:
         type=str,
         default=os.environ.get("GITEE_TOKEN"),
         help="Gitee Personal Access Token (defaults to GITEE_TOKEN env var)",
+    )
+    parser.add_argument(
+        "--github-repo",
+        type=str,
+        default="dedicate617/godot472",
+        help="GitHub mirror repository in 'owner/repo' format (default: 'dedicate617/godot472')",
+    )
+    parser.add_argument(
+        "--prune-old-releases",
+        type=int,
+        default=2,
+        help="Number of recent releases to retain on Gitee (default: 2)",
     )
     parser.add_argument(
         "--dry-run",
@@ -278,7 +322,8 @@ def main() -> int:
             shutil.copy2(src, dst)
 
     # 4. Generate README.md
-    readme_content = generate_release_readme(tag, version, assets_info)
+    gitee_repo = args.repo_url.replace(".git", "").split("gitee.com/")[-1] if "gitee.com/" in args.repo_url else "bosmutus/mind-scada-release"
+    readme_content = generate_release_readme(tag, version, assets_info, gitee_repo=gitee_repo, github_repo=args.github_repo)
     (staging_dir / "README.md").write_text(readme_content, encoding="utf-8")
     log_success("Generated release README.md with download & verification table.")
 
@@ -334,8 +379,18 @@ def main() -> int:
     if gitee_token and gitee_script.is_file():
         log_info("GITEE_TOKEN detected. Uploading binary packages to Gitee Release via API...")
         try:
+            cmd = [
+                sys.executable,
+                str(gitee_script),
+                "--token", gitee_token,
+                "--repo", gitee_repo,
+                "--github-repo", args.github_repo,
+                "--prune-old-releases", str(args.prune_old_releases),
+                "--tag", tag,
+                "--dist-dir", str(dist_dir),
+            ]
             subprocess.run(
-                [sys.executable, str(gitee_script), "--token", gitee_token, "--tag", tag, "--dist-dir", str(dist_dir)],
+                cmd,
                 check=True,
                 stdin=subprocess.DEVNULL,
             )
