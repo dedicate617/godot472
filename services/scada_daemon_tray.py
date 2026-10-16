@@ -45,6 +45,12 @@ CREATE_NO_WINDOW = 0x08000000
 WM_TRAY_NOTIFY = win32con.WM_USER + 20
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+script_str = str(SCRIPT_DIR)
+if script_str.startswith("\\\\vmware-host\\Shared Folders\\D\\"):
+    script_str = script_str.replace("\\\\vmware-host\\Shared Folders\\D\\", "Z:\\D\\")
+elif script_str.startswith("\\\\vmware-host\\Shared Folders\\"):
+    script_str = script_str.replace("\\\\vmware-host\\Shared Folders\\", "Z:\\")
+SCRIPT_DIR = Path(script_str)
 ROOT_DIR = SCRIPT_DIR.parent
 BIN_DIR = SCRIPT_DIR / "bin"
 if not BIN_DIR.is_dir():
@@ -63,7 +69,8 @@ SERVICES_CONFIG = [
         "name": "OPC-UA 服务",
         "port": 4840,
         "exe": BIN_DIR / "run_mindscada_svc.exe",
-        "py": SCRIPT_DIR / "run_mindscada_svc.py",
+        "py": SCRIPT_DIR / "uaserver_service.py",
+        "fallback_py": SCRIPT_DIR / "run_mindscada_svc.py",
         "native_fallback": Path(r"C:\MindSCADA\build\build-Make_MindSCADA-Desktop_Qt_5_13_1_MSVC2017_64bit-Release\bin\release\MindSCADASvc.windows.opt.64.exe"),
         "native_args": ["-M", "-V", "-p", r"C:\prj\luxiangyi472\server\server.devx"],
         "cwd": SCRIPT_DIR,
@@ -144,19 +151,22 @@ class ServiceSupervisor:
         cmd = None
         cwd = s.get("cwd", SCRIPT_DIR)
 
-        # 1. Check standalone .exe first
-        if s.get("exe") and Path(s["exe"]).is_file():
+        # 1. Prefer Python script if specified (instant startup & always latest code)
+        if s.get("py") and Path(s["py"]).is_file():
+            cmd = [sys.executable, str(s["py"])] + s.get("args", [])
+        # 2. Check standalone .exe (for native C/C++ binaries: nanomq, scada_tunnel)
+        elif s.get("exe") and Path(s["exe"]).is_file():
             cmd = [str(s["exe"])] + s.get("args", [])
-        # 2. Check fallback exe
+        # 3. Check fallback exe
         elif s.get("fallback_exe") and Path(s["fallback_exe"]).is_file():
             cmd = [str(s["fallback_exe"])] + s.get("args", [])
-        # 3. Check native fallback (e.g. MindSCADASvc)
+        # 4. Check fallback python script
+        elif s.get("fallback_py") and Path(s["fallback_py"]).is_file():
+            cmd = [sys.executable, str(s["fallback_py"])] + s.get("args", [])
+        # 5. Check native fallback (e.g. MindSCADASvc)
         elif s.get("native_fallback") and Path(s["native_fallback"]).is_file():
             cmd = [str(s["native_fallback"])] + s.get("native_args", [])
             cwd = s["native_fallback"].parent
-        # 4. Check python script fallback
-        elif s.get("py") and Path(s["py"]).is_file():
-            cmd = [sys.executable, str(s["py"])] + s.get("args", [])
 
         if not cmd:
             logger.warning(f"No executable or script found for {s['name']}")
@@ -232,12 +242,13 @@ class ServiceSupervisor:
                     parts = line.split()
                     if len(parts) >= 5:
                         pid = parts[-1]
-                        subprocess.run(
-                            ["taskkill", "/F", "/PID", pid],
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                            creationflags=CREATE_NO_WINDOW,
-                        )
+                        if pid.isdigit() and int(pid) > 4:
+                            subprocess.run(
+                                ["taskkill", "/F", "/PID", pid],
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL,
+                                creationflags=CREATE_NO_WINDOW,
+                            )
             except Exception:
                 pass
 
@@ -321,16 +332,23 @@ class MindScadaTrayApp:
         else:
             self.hicon = win32gui.LoadIcon(0, win32con.IDI_APPLICATION)
 
-        # Add tray icon
-        flags = win32gui.NIF_ICON | win32gui.NIF_MESSAGE | win32gui.NIF_TIP
-        nid = (self.hwnd, 0, flags, WM_TRAY_NOTIFY, self.hicon, "MindSCADA 正在初始化...")
-        win32gui.Shell_NotifyIcon(win32gui.NIM_ADD, nid)
-
-        # Show balloon tooltip on start
-        self.show_balloon("MindSCADA 后台守护已启动", "所有后台服务已就绪并在托盘静默运行。双击托盘打开 Web SCADA。")
+        # Add tray icon (with graceful fallback if running in non-desktop window station)
+        self.tray_installed = False
+        try:
+            flags = win32gui.NIF_ICON | win32gui.NIF_MESSAGE | win32gui.NIF_TIP
+            nid = (self.hwnd, 0, flags, WM_TRAY_NOTIFY, self.hicon, "MindSCADA 正在初始化...")
+            win32gui.Shell_NotifyIcon(win32gui.NIM_ADD, nid)
+            self.tray_installed = True
+            logger.info("Windows System Tray icon created successfully.")
+            # Show balloon tooltip on start
+            self.show_balloon("MindSCADA 后台守护已启动", "所有后台服务已就绪并在托盘静默运行。双击托盘打开 Web SCADA。")
+        except Exception as e:
+            logger.warning(f"Windows Shell Tray notification area not available in current window station: {e}. Supervisor running in background daemon mode.")
 
     def show_balloon(self, title: str, text: str):
         """Display a Windows balloon notification from the tray."""
+        if not self.tray_installed:
+            return
         try:
             nid = (
                 self.hwnd, 0,
@@ -349,6 +367,8 @@ class MindScadaTrayApp:
 
     def update_tooltip(self):
         """Update tray tooltip with count of running services."""
+        if not self.tray_installed:
+            return
         running_cnt = sum(1 for v in self.supervisor.service_status.values() if v)
         total_cnt = len(SERVICES_CONFIG)
         tip = f"MindSCADA 守护 [{running_cnt}/{total_cnt} 正常]"
@@ -453,11 +473,12 @@ class MindScadaTrayApp:
         return 0
 
     def on_destroy(self, hwnd, msg, wparam, lparam):
-        nid = (self.hwnd, 0)
-        try:
-            win32gui.Shell_NotifyIcon(win32gui.NIM_DELETE, nid)
-        except Exception:
-            pass
+        if self.tray_installed:
+            nid = (self.hwnd, 0)
+            try:
+                win32gui.Shell_NotifyIcon(win32gui.NIM_DELETE, nid)
+            except Exception:
+                pass
         win32gui.PostQuitMessage(0)
         return 0
 
