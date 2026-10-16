@@ -68,12 +68,11 @@ SERVICES_CONFIG = [
         "id": "opcua",
         "name": "OPC-UA 服务",
         "port": 4840,
-        "exe": BIN_DIR / "run_mindscada_svc.exe",
-        "py": SCRIPT_DIR / "uaserver_service.py",
-        "fallback_py": SCRIPT_DIR / "run_mindscada_svc.py",
-        "native_fallback": Path(r"C:\MindSCADA\build\build-Make_MindSCADA-Desktop_Qt_5_13_1_MSVC2017_64bit-Release\bin\release\MindSCADASvc.windows.opt.64.exe"),
-        "native_args": ["-M", "-V", "-p", r"C:\prj\luxiangyi472\server\server.devx"],
-        "cwd": SCRIPT_DIR,
+        "exe": Path(r"C:\MindSCADA\build\build-Make_MindSCADA-Desktop_Qt_5_13_1_MSVC2017_64bit-Release\bin\release\MindSCADASvc.windows.opt.64.exe"),
+        "args": ["-M", "-V", "-p", r"C:\prj\luxiangyi472\server\server.devx"],
+        "cwd": Path(r"C:\MindSCADA\build\build-Make_MindSCADA-Desktop_Qt_5_13_1_MSVC2017_64bit-Release\bin\release"),
+        "fallback_py": SCRIPT_DIR / "uaserver_service.py",
+        "py": None,
     },
     {
         "id": "nanomq",
@@ -119,13 +118,15 @@ SERVICES_CONFIG = [
     },
 ]
 
-def is_port_listening(port: int, host: str = "127.0.0.1", timeout: float = 0.35) -> bool:
-    """Check if target TCP port is open and listening."""
-    try:
-        with socket.create_connection((host, port), timeout=timeout):
-            return True
-    except Exception:
-        return False
+def is_port_listening(port: int, host: str = "localhost", timeout: float = 0.35) -> bool:
+    """Check if target TCP port is open and listening across IPv4 and IPv6."""
+    for h in [host, "127.0.0.1", "::1"]:
+        try:
+            with socket.create_connection((h, port), timeout=timeout):
+                return True
+        except Exception:
+            pass
+    return False
 
 
 class ServiceSupervisor:

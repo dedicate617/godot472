@@ -562,7 +562,9 @@ async def _handle_invoke_side_effects(method_path, inputs, code):
 class OpcUaSouthboundBridge:
     """Bridges WebSocket Gateway to Southbound OPC-UA Server (MindSCADASvc on 4840)."""
 
-    def __init__(self, endpoint="opc.tcp://127.0.0.1:4840"):
+    def __init__(self, endpoint=None):
+        if endpoint is None:
+            endpoint = os.environ.get("OPCUA_ENDPOINT", "opc.tcp://localhost:4840")
         self.endpoint = endpoint
         self.client = None
         self.objects = None
@@ -585,22 +587,34 @@ class OpcUaSouthboundBridge:
 
     def connect(self):
         self.disconnect()
-        try:
-            from opcua import Client, ua
-            self.ua = ua
-            self.client = Client(self.endpoint)
-            self.client.connect()
-            self.objects = self.client.get_objects_node()
-            self.connected = True
-            logger.info("[Southbound] Connected to OPC-UA server at %s", self.endpoint)
-            return True
-        except Exception as e:
-            now = time.time()
-            if getattr(self, "_last_err_log", 0) + 30 < now:
-                self._last_err_log = now
-                logger.info("[Southbound] OPC-UA connect failed: %s (quiet retrying)", e)
-            self.connected = False
-            return False
+        from opcua import Client, ua
+        self.ua = ua
+
+        endpoints_to_try = [self.endpoint]
+        for ep in ["opc.tcp://localhost:4840", "opc.tcp://[::1]:4840", "opc.tcp://127.0.0.1:4840"]:
+            if ep not in endpoints_to_try:
+                endpoints_to_try.append(ep)
+
+        last_err = None
+        for ep in endpoints_to_try:
+            try:
+                client = Client(ep)
+                client.connect()
+                self.client = client
+                self.objects = self.client.get_objects_node()
+                self.connected = True
+                self.endpoint = ep
+                logger.info("[Southbound] Connected to OPC-UA server at %s", ep)
+                return True
+            except Exception as e:
+                last_err = e
+
+        now = time.time()
+        if getattr(self, "_last_err_log", 0) + 30 < now:
+            self._last_err_log = now
+            logger.info("[Southbound] OPC-UA connect failed: %s (quiet retrying)", last_err)
+        self.connected = False
+        return False
 
     def _resolve_node(self, tag_path):
         if not self.connected or not self.objects:
@@ -613,13 +627,16 @@ class OpcUaSouthboundBridge:
         if cache_key in self.node_cache:
             return self.node_cache[cache_key]
 
-        try:
-            browse_path = ["0:" + p for p in parts]
-            node = self.objects.get_child(browse_path)
-            self.node_cache[cache_key] = node
-            return node
-        except Exception:
-            return None
+        # Try namespace 0 first (MindSCADASvc standard), then fallback to namespace 2 (uaserver)
+        for ns in [0, 2]:
+            try:
+                browse_path = [f"{ns}:{p}" for p in parts]
+                node = self.objects.get_child(browse_path)
+                self.node_cache[cache_key] = node
+                return node
+            except Exception:
+                pass
+        return None
 
     def write_tag(self, tag_path, value):
         if not self.connected:
@@ -663,8 +680,10 @@ class OpcUaSouthboundBridge:
             if not node:
                 return None
             return node.get_value()
-        except Exception:
+        except (ConnectionError, BrokenPipeError, socket.error):
             self.disconnect()
+            return None
+        except Exception:
             return None
 
     def _get_modules_node(self):
@@ -816,8 +835,7 @@ async def opcua_sync_task():
             all_subs.update(client.subscribed_paths)
 
         for path in all_subs:
-            # Only poll real industrial tags under virtual/
-            if not path.startswith("virtual/"):
+            if path.startswith("system/"):
                 continue
             val = await loop.run_in_executor(None, OPCUA_BRIDGE.read_tag, path)
             if val is not None:
@@ -937,7 +955,16 @@ async def handle_client(reader, writer):
                     for p in paths:
                         conn.subscribed_paths.add(p)
                     logger.info("%s subscribed to %d path(s): %s", conn.client_id, len(paths), paths)
-                    snapshot = {p: TAG_DB.read_tag(p) for p in paths if TAG_DB.read_tag(p) is not None}
+                    loop = asyncio.get_running_loop()
+                    snapshot = {}
+                    for p in paths:
+                        if OPCUA_BRIDGE.connected and not p.startswith("system/"):
+                            v = await loop.run_in_executor(None, OPCUA_BRIDGE.read_tag, p)
+                            if v is not None:
+                                TAG_DB.write_tag(p, v)
+                        val = TAG_DB.read_tag(p)
+                        if val is not None:
+                            snapshot[p] = val
                     await conn.send_json({
                         "op": "sub_ack",
                         "count": len(paths),
