@@ -320,17 +320,10 @@ def upload_asset(repo: str, release_id: int, file_path: Path, token: str) -> Uni
     log_info(f"Uploading asset to Gitee: {file_path.name} ({file_size_mb:.2f} MB)...")
 
     # Normalize file path to avoid UNC path issues with curl on Windows VMware shared folders
-    file_str = str(file_path)
-    if file_str.startswith("\\\\vmware-host\\Shared Folders\\D\\"):
-        file_str = file_str.replace("\\\\vmware-host\\Shared Folders\\D\\", "Z:\\D\\")
-    elif file_str.startswith("\\\\vmware-host\\Shared Folders\\"):
-        file_str = file_str.replace("\\\\vmware-host\\Shared Folders\\", "Z:\\")
-
-    try:
-        rel = file_path.relative_to(Path.cwd())
-        file_arg = str(rel)
-    except Exception:
-        file_arg = file_str
+    import re
+    file_str = re.sub(r'^[\\/]+vmware-host[\\/]Shared Folders[\\/]', 'Z:\\\\', str(file_path))
+    file_path = Path(file_str)
+    file_arg = file_str
 
     # Prefer system curl: try normal direct connection first, fallback to direct IP if needed
     curl_bin = shutil.which("curl") or shutil.which("curl.exe")
@@ -473,7 +466,7 @@ def main() -> int:
     tag = args.tag.strip()
     title = args.name or f"MindSCADA Engine {tag}"
 
-    dist_path = Path(args.dist_dir).resolve()
+    dist_path = Path(args.dist_dir)
     assets = sorted(collect_dist_files(dist_path), key=lambda f: f.stat().st_size)
 
     banner = "=" * 70

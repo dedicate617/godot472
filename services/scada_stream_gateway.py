@@ -161,6 +161,9 @@ class QtShmBridge:
         self.latest_jpeg = None
         self.latest_seq = 0
         self.base_arr = None
+        self._prev_raw = None
+        self._last_sent_time = 0.0
+        self._static_heartbeat_interval = 1.0  # 1 fps heartbeat for static scenes
 
         # Simulation state for Log
         self.current_page = 1
@@ -565,6 +568,11 @@ class QtShmBridge:
         last_connect_try = 0
         last_heartbeat_time = 0
         while self.is_running:
+            # If no client is connected to this bridge, throttle worker loop to 0% CPU
+            if not self.frame_listeners:
+                time.sleep(0.1)
+                continue
+
             if not self.ptr or not self.is_healthy():
                 now = time.time()
                 if now - last_connect_try > 1.5:
@@ -579,8 +587,8 @@ class QtShmBridge:
                         time.sleep(0.08)
                     elif self.is_log:
                         now = time.time()
-                        if now - last_heartbeat_time >= 1.0:
-                            last_heartbeat_time = now
+                        if now - self._last_sent_time >= self._static_heartbeat_interval:
+                            self._last_sent_time = now
                             self._broadcast_latest()
                         time.sleep(0.1)
                     else:
@@ -608,12 +616,32 @@ class QtShmBridge:
 
                 now = time.time()
                 is_new_frame = (res == 0 or seq != self.latest_seq)
-                is_heartbeat = (now - last_encode_time > 2.0)
+                is_heartbeat = (now - self._last_sent_time > self._static_heartbeat_interval)
                 if is_new_frame or is_heartbeat:
                     pix_offset = 4352
                     c_buf = (ctypes.c_uint8 * (mw * mh * 4)).from_address(self.ptr + pix_offset)
                     arr = np.ctypeslib.as_array(c_buf).reshape((mh, mw, 4))
                     cropped = arr[:cur_h, :cur_w]
+
+                    # Zero-overhead dirty check against previous raw frame buffer
+                    is_identical = (
+                        self._prev_raw is not None
+                        and self._prev_raw.shape == cropped.shape
+                        and np.array_equal(cropped, self._prev_raw)
+                    )
+
+                    if is_identical and self.latest_jpeg is not None:
+                        if not is_heartbeat:
+                            # Frame content has not changed; skip expensive JPEG encoding & push
+                            continue
+                        # Static heartbeat: push cached JPEG without re-encoding to keep connection alive
+                        self._last_sent_time = now
+                        self.latest_seq = seq
+                        self._broadcast_latest()
+                        continue
+
+                    # Pixel content changed: update cache and re-encode JPEG
+                    self._prev_raw = cropped.copy()
                     ok, jpg = cv2.imencode(".jpg", cropped, [cv2.IMWRITE_JPEG_QUALITY, 85])
                     if ok:
                         jpg_bytes = jpg.tobytes()
@@ -621,7 +649,7 @@ class QtShmBridge:
                         self.latest_seq = seq
                         self.width = cur_w
                         self.height = cur_h
-                        last_encode_time = now
+                        self._last_sent_time = now
                         self._broadcast_latest()
             except Exception as e:
                 logger.debug("QtShm read error: %s", e)
@@ -946,6 +974,9 @@ class StreamSidecarBridge:
         self._lock = threading.Lock()
         self.latest_jpeg = None
         self.latest_seq = 0
+        self._prev_raw = None
+        self._last_sent_time = 0.0
+        self._static_heartbeat_interval = 1.0  # 1 fps heartbeat for static scenes
 
     def start(self):
         with self._lock:
@@ -1041,16 +1072,39 @@ class StreamSidecarBridge:
                 logger.debug("Sidecar status tick")
 
     def _handle_frame_ready(self, seq, w, h):
-        if not self.shm: return
+        if not self.shm or not self.frame_listeners:
+            return
         try:
             buf_size = w * h * 4
             raw_bytes = np.frombuffer(self.shm, dtype=np.uint8, count=buf_size, offset=32)
             arr = raw_bytes.reshape((h, w, 4))
+
+            now = time.time()
+            is_heartbeat = (now - self._last_sent_time >= self._static_heartbeat_interval)
+            is_identical = (
+                self._prev_raw is not None
+                and self._prev_raw.shape == arr.shape
+                and np.array_equal(arr, self._prev_raw)
+            )
+
+            if is_identical and self.latest_jpeg is not None:
+                if not is_heartbeat:
+                    return
+                # Static heartbeat tick
+                self._last_sent_time = now
+                self.latest_seq = seq
+                for cb in list(self.frame_listeners):
+                    try: cb(self.latest_jpeg, seq, w, h)
+                    except Exception: pass
+                return
+
+            self._prev_raw = arr.copy()
             ok, jpg = cv2.imencode(".jpg", arr, [cv2.IMWRITE_JPEG_QUALITY, 80])
             if not ok: return
             jpg_bytes = jpg.tobytes()
             self.latest_jpeg = jpg_bytes
             self.latest_seq = seq
+            self._last_sent_time = now
             for cb in list(self.frame_listeners):
                 try: cb(jpg_bytes, seq, w, h)
                 except Exception: pass
