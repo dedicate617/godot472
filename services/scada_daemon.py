@@ -54,11 +54,14 @@ if not BIN_DIR.is_dir():
 
 WEB_DIR = SCRIPT_DIR / "web"
 if not WEB_DIR.is_dir():
-    cand_web = ROOT_DIR.parent / "luxiangyi472" / "scada4" / "build_web"
-    if cand_web.is_dir():
-        WEB_DIR = cand_web
+    if (SCRIPT_DIR.parent / "web").is_dir():
+        WEB_DIR = SCRIPT_DIR.parent / "web"
     else:
-        WEB_DIR = SCRIPT_DIR
+        cand_web = ROOT_DIR.parent / "luxiangyi472" / "scada4" / "build_web"
+        if cand_web.is_dir():
+            WEB_DIR = cand_web
+        else:
+            WEB_DIR = SCRIPT_DIR
 
 PYTHON_BIN = sys.executable or "python3"
 

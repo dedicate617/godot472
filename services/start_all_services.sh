@@ -12,7 +12,9 @@ PID_DIR="${SCRIPT_DIR}/.pids"
 WEB_DIR="${SCRIPT_DIR}/web"
 
 if [ ! -d "${WEB_DIR}" ]; then
-    if [ -d "${ROOT_DIR}/../luxiangyi472/scada4/build_web" ]; then
+    if [ -d "${ROOT_DIR}/web" ]; then
+        WEB_DIR="${ROOT_DIR}/web"
+    elif [ -d "${ROOT_DIR}/../luxiangyi472/scada4/build_web" ]; then
         WEB_DIR="${ROOT_DIR}/../luxiangyi472/scada4/build_web"
     else
         WEB_DIR="${SCRIPT_DIR}"

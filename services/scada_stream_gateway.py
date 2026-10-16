@@ -29,9 +29,84 @@ import sys
 import threading
 import time
 from urllib.parse import parse_qs, urlparse
-import cv2
 import numpy as np
 from PIL import Image as PILImage, ImageDraw as PILDraw, ImageFont as PILFont
+try:
+    import cv2
+except ImportError:
+    import io
+    class _Cv2Fallback:
+        IMREAD_COLOR = 1
+        IMWRITE_JPEG_QUALITY = 1
+        COLOR_BGR2RGB = 4
+        COLOR_RGB2BGR = 4
+        LINE_AA = 16
+        FONT_HERSHEY_SIMPLEX = 0
+
+        @staticmethod
+        def imdecode(buf, flags=1):
+            try:
+                b = buf.tobytes() if hasattr(buf, "tobytes") else bytes(buf)
+                im = PILImage.open(io.BytesIO(b)).convert("RGB")
+                arr = np.array(im)
+                return arr[:, :, ::-1]  # RGB -> BGR
+            except Exception:
+                return None
+
+        @staticmethod
+        def imencode(ext, img, params=None):
+            try:
+                quality = 85
+                if params and len(params) >= 2:
+                    quality = params[1]
+                if isinstance(img, np.ndarray):
+                    if len(img.shape) == 3 and img.shape[2] == 3:
+                        im = PILImage.fromarray(img[:, :, ::-1])  # BGR -> RGB
+                    elif len(img.shape) == 3 and img.shape[2] == 4:
+                        im = PILImage.fromarray(img[:, :, [2, 1, 0, 3]])
+                    else:
+                        im = PILImage.fromarray(img)
+                elif isinstance(img, PILImage.Image):
+                    im = img
+                else:
+                    return False, b""
+                buf = io.BytesIO()
+                im.save(buf, format="JPEG", quality=quality)
+                return True, np.frombuffer(buf.getvalue(), dtype=np.uint8)
+            except Exception:
+                return False, b""
+
+        @staticmethod
+        def cvtColor(src, code):
+            if isinstance(src, np.ndarray):
+                if len(src.shape) == 3 and src.shape[2] == 3:
+                    return src[:, :, ::-1]
+                elif len(src.shape) == 3 and src.shape[2] == 4:
+                    return src[:, :, [2, 1, 0, 3]]
+            return src
+
+        @staticmethod
+        def rectangle(img, pt1, pt2, color, thickness=1):
+            pass
+
+        @staticmethod
+        def line(img, pt1, pt2, color, thickness=1):
+            pass
+
+        @staticmethod
+        def polylines(img, pts, isClosed, color, thickness=1, lineType=None):
+            pass
+
+        @staticmethod
+        def circle(img, center, radius, color, thickness=1):
+            pass
+
+        @staticmethod
+        def putText(img, text, org, fontFace, fontScale, color, thickness=1):
+            pass
+
+    cv2 = _Cv2Fallback()
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -60,18 +135,27 @@ PIPE_ACCESS_DUPLEX = 0x00000003
 PIPE_TYPE_BYTE = 0x00000000
 PIPE_READMODE_BYTE = 0x00000000
 PIPE_WAIT = 0x00000000
-k32 = ctypes.windll.kernel32
-k32.OpenFileMappingW.argtypes = [ctypes.c_uint32, ctypes.c_bool, ctypes.c_wchar_p]
-k32.OpenFileMappingW.restype = ctypes.c_void_p
-k32.MapViewOfFile.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_size_t]
-k32.MapViewOfFile.restype = ctypes.c_void_p
-k32.UnmapViewOfFile.argtypes = [ctypes.c_void_p]
-k32.CloseHandle.argtypes = [ctypes.c_void_p]
-k32.OpenEventW.argtypes = [ctypes.c_uint32, ctypes.c_bool, ctypes.c_wchar_p]
-k32.OpenEventW.restype = ctypes.c_void_p
-k32.SetEvent.argtypes = [ctypes.c_void_p]
-k32.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
-k32.WaitForSingleObject.restype = ctypes.c_uint32
+if sys.platform == "win32":
+    k32 = ctypes.windll.kernel32
+    k32.OpenFileMappingW.argtypes = [ctypes.c_uint32, ctypes.c_bool, ctypes.c_wchar_p]
+    k32.OpenFileMappingW.restype = ctypes.c_void_p
+    k32.MapViewOfFile.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_size_t]
+    k32.MapViewOfFile.restype = ctypes.c_void_p
+    k32.UnmapViewOfFile.argtypes = [ctypes.c_void_p]
+    k32.CloseHandle.argtypes = [ctypes.c_void_p]
+    k32.OpenEventW.argtypes = [ctypes.c_uint32, ctypes.c_bool, ctypes.c_wchar_p]
+    k32.OpenEventW.restype = ctypes.c_void_p
+    k32.SetEvent.argtypes = [ctypes.c_void_p]
+    k32.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+    k32.WaitForSingleObject.restype = ctypes.c_uint32
+else:
+    class _DummyK32:
+        def __getattr__(self, name):
+            def _dummy_fn(*args, **kwargs):
+                return 0
+            return _dummy_fn
+    k32 = _DummyK32()
+
 
 
 def fnv1a32(text: str) -> int:
@@ -982,7 +1066,12 @@ class StreamSidecarBridge:
         with self._lock:
             if self.is_running:
                 return True
+            if sys.platform != "win32":
+                logger.info("StreamSidecarBridge is Windows-only; running in stub mode on Linux/ARM.")
+                self.is_running = True
+                return True
             self.is_running = True
+
 
         shm_size = self.width * self.height * 4 + 32
         self.shm = mmap.mmap(-1, shm_size, self.shm_name)

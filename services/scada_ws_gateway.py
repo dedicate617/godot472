@@ -36,8 +36,11 @@ def generate_report_files(rpt_type: str, out_pdf: str, out_xlsx: str, device_id:
     """Generates PDF and XLSX report for log, alarm, or batch."""
     try:
         from PIL import Image, ImageDraw, ImageFont
-        import openpyxl
-        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        try:
+            import openpyxl
+            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        except ImportError:
+            openpyxl = None
 
         now_str = time.strftime("%Y-%m-%d %H:%M:%S")
 
@@ -66,49 +69,50 @@ def generate_report_files(rpt_type: str, out_pdf: str, out_xlsx: str, device_id:
                 [4, now_str, operator, operator, "标准保护", "数据记录已归档，导出请求处理完成"],
             ]
 
-        # 1. Generate XLSX
-        os.makedirs(os.path.dirname(os.path.abspath(out_xlsx)), exist_ok=True)
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = rpt_type.capitalize()
-        ws.merge_cells("A1:F1")
-        top_cell = ws["A1"]
-        top_cell.value = title
-        top_cell.font = Font(name="Microsoft YaHei", size=16, bold=True, color="FFFFFF")
-        top_cell.fill = PatternFill(start_color="1B4F72", end_color="1B4F72", fill_type="solid")
-        top_cell.alignment = Alignment(horizontal="center", vertical="center")
-        ws.row_dimensions[1].height = 40
+        # 1. Generate XLSX (if openpyxl installed)
+        if openpyxl is not None:
+            os.makedirs(os.path.dirname(os.path.abspath(out_xlsx)), exist_ok=True)
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = rpt_type.capitalize()
+            ws.merge_cells("A1:F1")
+            top_cell = ws["A1"]
+            top_cell.value = title
+            top_cell.font = Font(name="Microsoft YaHei", size=16, bold=True, color="FFFFFF")
+            top_cell.fill = PatternFill(start_color="1B4F72", end_color="1B4F72", fill_type="solid")
+            top_cell.alignment = Alignment(horizontal="center", vertical="center")
+            ws.row_dimensions[1].height = 40
 
-        ws.append([f"设备编号: {device_id}", f"客户名称: {customer}", f"导出人员: {operator}", f"导出时间: {now_str}"])
-        ws.append([])
+            ws.append([f"设备编号: {device_id}", f"客户名称: {customer}", f"导出人员: {operator}", f"导出时间: {now_str}"])
+            ws.append([])
 
-        ws.append(headers)
-        hdr_row = ws.max_row
-        for col_idx in range(1, len(headers) + 1):
-            cell = ws.cell(row=hdr_row, column=col_idx)
-            cell.font = Font(name="Microsoft YaHei", size=11, bold=True, color="FFFFFF")
-            cell.fill = PatternFill(start_color="2874A6", end_color="2874A6", fill_type="solid")
-            cell.alignment = Alignment(horizontal="center", vertical="center")
-            ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = 22
+            ws.append(headers)
+            hdr_row = ws.max_row
+            for col_idx in range(1, len(headers) + 1):
+                cell = ws.cell(row=hdr_row, column=col_idx)
+                cell.font = Font(name="Microsoft YaHei", size=11, bold=True, color="FFFFFF")
+                cell.fill = PatternFill(start_color="2874A6", end_color="2874A6", fill_type="solid")
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+                ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = 22
 
-        thin_border = Border(
-            left=Side(style='thin', color='DDDDDD'),
-            right=Side(style='thin', color='DDDDDD'),
-            top=Side(style='thin', color='DDDDDD'),
-            bottom=Side(style='thin', color='DDDDDD')
-        )
-        for r_idx, row in enumerate(rows):
-            ws.append(row)
-            curr_row = ws.max_row
-            fill_color = "F9EBEA" if r_idx % 2 == 1 else "FFFFFF"
-            for col_idx in range(1, len(row) + 1):
-                cell = ws.cell(row=curr_row, column=col_idx)
-                cell.font = Font(name="Microsoft YaHei", size=10)
-                cell.fill = PatternFill(start_color=fill_color, end_color=fill_color, fill_type="solid")
-                cell.alignment = Alignment(horizontal="center" if col_idx <= 2 else "left", vertical="center")
-                cell.border = thin_border
+            thin_border = Border(
+                left=Side(style='thin', color='DDDDDD'),
+                right=Side(style='thin', color='DDDDDD'),
+                top=Side(style='thin', color='DDDDDD'),
+                bottom=Side(style='thin', color='DDDDDD')
+            )
+            for r_idx, row in enumerate(rows):
+                ws.append(row)
+                curr_row = ws.max_row
+                fill_color = "F9EBEA" if r_idx % 2 == 1 else "FFFFFF"
+                for col_idx in range(1, len(row) + 1):
+                    cell = ws.cell(row=curr_row, column=col_idx)
+                    cell.font = Font(name="Microsoft YaHei", size=10)
+                    cell.fill = PatternFill(start_color=fill_color, end_color=fill_color, fill_type="solid")
+                    cell.alignment = Alignment(horizontal="center" if col_idx <= 2 else "left", vertical="center")
+                    cell.border = thin_border
 
-        wb.save(out_xlsx)
+            wb.save(out_xlsx)
 
         # 2. Generate PDF using Pillow
         os.makedirs(os.path.dirname(os.path.abspath(out_pdf)), exist_ok=True)
@@ -116,32 +120,55 @@ def generate_report_files(rpt_type: str, out_pdf: str, out_xlsx: str, device_id:
         d = ImageDraw.Draw(img)
         d.rectangle([(40, 40), (1200, 130)], fill=(27, 79, 114))
 
-        try:
-            font_title = ImageFont.truetype("msyh.ttc", 36)
-            font_meta = ImageFont.truetype("msyh.ttc", 20)
-            font_body = ImageFont.truetype("msyh.ttc", 18)
-            font_hdr = ImageFont.truetype("msyh.ttc", 20)
-        except Exception:
+        candidate_fonts = [
+            "msyh.ttc",
+            "simsun.ttc",
+            "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+            "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+            "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "DejaVuSans.ttf",
+        ]
+        font_path = None
+        for cf in candidate_fonts:
             try:
-                font_title = ImageFont.truetype("simsun.ttc", 36)
-                font_meta = ImageFont.truetype("simsun.ttc", 20)
-                font_body = ImageFont.truetype("simsun.ttc", 18)
-                font_hdr = ImageFont.truetype("simsun.ttc", 20)
+                ImageFont.truetype(cf, 18)
+                font_path = cf
+                break
             except Exception:
-                font_title = ImageFont.load_default()
-                font_meta = font_title
-                font_body = font_title
-                font_hdr = font_title
+                continue
 
-        d.text((80, 65), title, fill=(255, 255, 255), font=font_title)
-        d.text((60, 150), f"设备: {device_id}   |   客户: {customer}   |   操作员: {operator}   |   时间: {now_str}", fill=(80, 80, 80), font=font_meta)
+        if font_path:
+            font_title = ImageFont.truetype(font_path, 36)
+            font_meta = ImageFont.truetype(font_path, 20)
+            font_body = ImageFont.truetype(font_path, 18)
+            font_hdr = ImageFont.truetype(font_path, 20)
+        else:
+            font_title = ImageFont.load_default()
+            font_meta = font_title
+            font_body = font_title
+            font_hdr = font_title
+
+        def safe_text(xy, txt, fill, font):
+            try:
+                d.text(xy, str(txt), fill=fill, font=font)
+            except Exception:
+                clean = str(txt).encode("latin-1", "replace").decode("latin-1")
+                try:
+                    d.text(xy, clean, fill=fill, font=font)
+                except Exception:
+                    pass
+
+        safe_text((80, 65), title, fill=(255, 255, 255), font=font_title)
+        safe_text((60, 150), f"设备: {device_id}   |   客户: {customer}   |   操作员: {operator}   |   时间: {now_str}", fill=(80, 80, 80), font=font_meta)
         d.line([(40, 190), (1200, 190)], fill=(40, 116, 166), width=3)
 
         d.rectangle([(40, 210), (1200, 260)], fill=(40, 116, 166))
         col_widths = [80, 220, 180, 180, 180, 320]
         curr_x = 50
         for i, h in enumerate(headers):
-            d.text((curr_x, 225), h, fill=(255, 255, 255), font=font_hdr)
+            safe_text((curr_x, 225), h, fill=(255, 255, 255), font=font_hdr)
             curr_x += col_widths[i]
 
         curr_y = 270
@@ -150,12 +177,12 @@ def generate_report_files(rpt_type: str, out_pdf: str, out_xlsx: str, device_id:
             d.rectangle([(40, curr_y), (1200, curr_y + 45)], fill=bg, outline=(220, 224, 230))
             rx = 50
             for i, val in enumerate(row):
-                d.text((rx, curr_y + 12), str(val), fill=(40, 40, 40), font=font_body)
+                safe_text((rx, curr_y + 12), str(val), fill=(40, 40, 40), font=font_body)
                 rx += col_widths[i]
             curr_y += 50
 
         d.line([(40, 1680), (1200, 1680)], fill=(200, 200, 200), width=1)
-        d.text((60, 1700), "MindSCADA Industrial Control Platform - Certified Electronic Log Record", fill=(150, 150, 150), font=font_meta)
+        safe_text((60, 1700), "MindSCADA Industrial Control Platform - Certified Electronic Log Record", fill=(150, 150, 150), font=font_meta)
 
         img.save(out_pdf, "PDF", resolution=150.0)
         logger.info("Generated report files: %s and %s", out_pdf, out_xlsx)
