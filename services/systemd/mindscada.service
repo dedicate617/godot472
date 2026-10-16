@@ -9,10 +9,11 @@ Type=simple
 # User can be pi or root (configured by install_service.sh)
 User=pi
 WorkingDirectory=/opt/mindscada/services
+Environment="PYTHONUNBUFFERED=1"
 ExecStart=/usr/bin/python3 /opt/mindscada/services/scada_daemon.py run
 ExecStop=/usr/bin/python3 /opt/mindscada/services/scada_daemon.py stop
 Restart=always
-RestartSec=5s
+RestartSec=3s
 LimitNOFILE=65535
 TimeoutStopSec=15s
 KillMode=mixed

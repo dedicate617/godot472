@@ -18,6 +18,32 @@ class COOPHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Content-Length", "0")
         self.end_headers()
 
+    def do_GET(self):
+        if self.path.startswith("/export") or self.path.startswith("/export?"):
+            import urllib.request
+            req = urllib.request.Request(f"http://127.0.0.1:8088{self.path}")
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            try:
+                with opener.open(req, timeout=10) as resp:
+                    resp_data = resp.read()
+                    self.send_response(resp.status)
+                    for k, v in resp.headers.items():
+                        if k.lower() in ("content-type", "content-disposition", "content-length"):
+                            self.send_header(k, v)
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+                    self.end_headers()
+                    self.wfile.write(resp_data)
+                return
+            except Exception as e:
+                self.send_response(502)
+                self.send_header("Content-Type", "text/plain")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.wfile.write(f"Export gateway error: {e}".encode("utf-8"))
+                return
+        super().do_GET()
+
     def do_POST(self):
         if self.path in ("/invoke", "/rpc") or self.path.startswith("/invoke?") or self.path.startswith("/rpc?"):
             import urllib.request

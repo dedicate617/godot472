@@ -37,10 +37,11 @@ Wants=network-online.target
 Type=simple
 User=${RUN_USER}
 WorkingDirectory=${SERVICES_DIR}
+Environment="PYTHONUNBUFFERED=1"
 ExecStart=${PYTHON_PATH} ${SERVICES_DIR}/scada_daemon.py run
 ExecStop=${PYTHON_PATH} ${SERVICES_DIR}/scada_daemon.py stop
 Restart=always
-RestartSec=5s
+RestartSec=3s
 LimitNOFILE=65535
 TimeoutStopSec=15s
 KillMode=mixed

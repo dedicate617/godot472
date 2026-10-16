@@ -120,12 +120,17 @@ SERVICES_CONFIG = [
 
 
 def is_port_listening(port: int, host: str = "127.0.0.1", timeout: float = 0.35) -> bool:
-    """Check if target TCP port is open and listening."""
-    try:
-        with socket.create_connection((host, port), timeout=timeout):
-            return True
-    except Exception:
-        return False
+    """Check if target TCP port is open and listening across IPv4/IPv6 dual stacks."""
+    hosts = [host]
+    if host in ("127.0.0.1", "localhost"):
+        hosts = ["localhost", "127.0.0.1", "::1"]
+    for h in hosts:
+        try:
+            with socket.create_connection((h, port), timeout=timeout):
+                return True
+        except Exception:
+            pass
+    return False
 
 
 def find_binary(name: str, candidate_dir: Path) -> Path:

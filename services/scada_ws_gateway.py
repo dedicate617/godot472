@@ -300,14 +300,20 @@ class WebSocketConnection:
             if not file_name:
                 file_name = f"{rpt_type}_{time.strftime('%Y%m%d%H%M%S')}.pdf"
 
-            export_dir = os.path.join(r"C:\temp\export", rpt_type)
+            base_export = r"C:\temp\export" if os.name == "nt" else "/tmp/export"
+            export_dir = os.path.join(base_export, rpt_type)
             os.makedirs(export_dir, exist_ok=True)
             target_path = os.path.join(export_dir, file_name)
             if not os.path.exists(target_path):
-                out_pdf = target_path if target_path.endswith(".pdf") else os.path.splitext(target_path)[0] + ".pdf"
-                out_xlsx = os.path.splitext(target_path)[0] + ".xlsx"
-                generate_report_files(rpt_type, out_pdf, out_xlsx)
-                target_path = out_pdf if file_name.endswith(".pdf") else out_xlsx
+                # Also check project export directory
+                cand_prj_path = os.path.join(r"C:\prj\luxiangyi472\scada4\export" if os.name == "nt" else "/opt/mindscada/export", rpt_type, file_name)
+                if os.path.exists(cand_prj_path):
+                    target_path = cand_prj_path
+                else:
+                    out_pdf = target_path if target_path.endswith(".pdf") else os.path.splitext(target_path)[0] + ".pdf"
+                    out_xlsx = os.path.splitext(target_path)[0] + ".xlsx"
+                    generate_report_files(rpt_type, out_pdf, out_xlsx)
+                    target_path = out_pdf if file_name.endswith(".pdf") else out_xlsx
 
             if os.path.exists(target_path):
                 with open(target_path, "rb") as f:
@@ -521,7 +527,8 @@ async def _handle_invoke_side_effects(method_path, inputs, code):
             if not fname.endswith(".pdf"):
                 fname += ".pdf"
 
-            export_dir = os.path.join(r"C:\temp\export", rpt_type)
+            base_export = r"C:\temp\export" if os.name == "nt" else "/tmp/export"
+            export_dir = os.path.join(base_export, rpt_type)
             os.makedirs(export_dir, exist_ok=True)
             out_pdf = os.path.join(export_dir, fname)
             out_xlsx = os.path.join(export_dir, os.path.splitext(fname)[0] + ".xlsx")
