@@ -34,6 +34,11 @@ name: Build Matrix CI/CD
         required: false
         default: false
         type: boolean
+      platform:
+        description: 'Target platform matrix filter (e.g. linux-arm64, or leave empty for all)'
+        required: false
+        default: ''
+        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -46,6 +51,7 @@ jobs:
   build:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
+    if: github.event_name != 'workflow_dispatch' || !inputs.platform || contains(inputs.platform, matrix.name)
     permissions:
       contents: write
     strategy:
@@ -61,7 +67,7 @@ jobs:
             targets: "editor template_debug template_release"
 
           - name: linux-arm32
-            os: ubuntu-latest
+            os: ubuntu-22.04
             platform: linux
             arch: arm32
             package-platform: pi32
@@ -70,7 +76,7 @@ jobs:
             apt-packages: "gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf pkg-config"
 
           - name: linux-arm64
-            os: ubuntu-latest
+            os: ubuntu-22.04
             platform: linux
             arch: arm64
             package-platform: pi64
@@ -79,7 +85,7 @@ jobs:
             apt-packages: "gcc-aarch64-linux-gnu g++-aarch64-linux-gnu pkg-config"
 
           - name: web-wasm32
-            os: ubuntu-latest
+            os: ubuntu-22.04
             platform: web
             arch: wasm32
             package-platform: web
