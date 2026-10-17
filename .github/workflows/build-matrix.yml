@@ -34,11 +34,6 @@ name: Build Matrix CI/CD
         required: false
         default: false
         type: boolean
-      platform:
-        description: 'Target platform matrix filter (e.g. linux-arm64, or leave empty for all)'
-        required: false
-        default: ''
-        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -51,7 +46,6 @@ jobs:
   build:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
-    if: github.event_name != 'workflow_dispatch' || !inputs.platform || contains(inputs.platform, matrix.name)
     permissions:
       contents: write
     strategy:
