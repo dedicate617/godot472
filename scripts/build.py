@@ -624,9 +624,17 @@ def assemble_scons_args(
 
         link_flags_list = [
             "-fno-lto",
-            "-Wl,--no-warn-rwx-segments",
             "-Wl,--allow-multiple-definition",
         ]
+        # Only pass --no-warn-rwx-segments if supported by the cross-compiler linker (binutils >= 2.39)
+        ld_bin = "aarch64-linux-gnu-ld" if arch == "arm64" else "arm-linux-gnueabihf-ld" if arch == "arm32" else "ld"
+        try:
+            res = subprocess.run([ld_bin, "--help"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=5)
+            if "--no-warn-rwx-segments" in res.stdout:
+                link_flags_list.append("-Wl,--no-warn-rwx-segments")
+        except Exception:
+            pass
+
         if arch == "arm32":
             link_flags_list.append("-Wl,--defsym=SSL_get_peer_certificate=SSL_get0_peer_certificate")
 
