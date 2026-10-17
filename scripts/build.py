@@ -599,6 +599,8 @@ def assemble_scons_args(
     # 8. Platform specific options
     if norm_plat == "linuxbsd":
         cmd.append("use_llvm=no")
+        cmd.append("builtin_mbedtls=no")
+        ccflags_list = []
         if arch == "arm32":
             # Cross-compilation: must explicitly specify the ARM32 cross-compiler binaries.
             # Without CC/CXX, SCons uses the native host g++ which rejects ARM-specific flags.
@@ -609,7 +611,14 @@ def assemble_scons_args(
             # when cross-compiling for ARM (the .S file is x86_64-only but the C
             # preprocessor may still detect ZSTD_ASM_SUPPORTED=1 on the host).
             cmd.append("disable_exceptions=yes")
-            cmd.append('ccflags=-mcpu=cortex-a72 -mtune=cortex-a72 -mfpu=neon-fp-armv8 -mfloat-abi=hard -mlittle-endian -munaligned-access')
+            ccflags_list.extend([
+                "-mcpu=cortex-a72",
+                "-mtune=cortex-a72",
+                "-mfpu=neon-fp-armv8",
+                "-mfloat-abi=hard",
+                "-mlittle-endian",
+                "-munaligned-access",
+            ])
             cmd.append('cxxflags=-std=c++17')
             cmd.append('cppdefines=ZSTD_DISABLE_ASM')
         elif arch == "arm64":
@@ -640,6 +649,9 @@ def assemble_scons_args(
 
         if deps_dir:
             plat_key = f"linux_{arch}"
+            deps_inc = deps_dir / plat_key / "include"
+            if deps_inc.is_dir():
+                ccflags_list.append(f"-I{deps_inc.as_posix()}")
             deps_lib = deps_dir / plat_key / "lib"
             sub_cfg = "Debug" if dev or target == "template_debug" else "Release"
             cfg_lib = deps_lib / sub_cfg
@@ -647,6 +659,8 @@ def assemble_scons_args(
                 link_flags_list.append(f"-L{cfg_lib.as_posix()}")
             if deps_lib.is_dir():
                 link_flags_list.append(f"-L{deps_lib.as_posix()}")
+        if ccflags_list:
+            cmd.append(f'ccflags={" ".join(ccflags_list)}')
         if link_flags_list:
             cmd.append(f'linkflags={" ".join(link_flags_list)}')
 
